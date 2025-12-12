@@ -1,1 +1,1 @@
-# Real-time-video-analysis-platform
+# Rawi Vision Platform
