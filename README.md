@@ -29,7 +29,7 @@ By integrating **Face Recognition**, **Video Summarization**, and **Anomaly Dete
 | **Backend API** | FastAPI |
 | **Frontend** | React.js |
 | **Database/Storage** | SQL (Metadata), FAISS (Vector Embeddings) |
-| **Inference Acceleration** | CUDA (GPU support required) |
+| **Inference Acceleration** | CUDA |
 
 ## Team Members
 
