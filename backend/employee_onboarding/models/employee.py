@@ -1,4 +1,3 @@
-from sqlalchemy import ForeignKey
 import uuid
 from sqlalchemy.dialects.postgresql import UUID
 from pgvector.sqlalchemy import Vector 
@@ -18,10 +17,3 @@ class Employee(Base):
     embedding: Mapped[list[float] | None] = mapped_column(Vector(512), nullable=True) # bosy told me each embedding should be 512 d
     date_created : Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-class OnboardingFile(Base):
-    __tablename__ = "onboarding_files"
-    
-    id: Mapped[int] = mapped_column(primary_key=True)
-    filename: Mapped[str] = mapped_column(nullable=False)
-    path: Mapped[str] = mapped_column(nullable=False)
-    date_created : Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -1,5 +1,6 @@
 from pydantic import BaseModel, ConfigDict
 from uuid import UUID
+from datetime import datetime
 
 class EmployeeBase(BaseModel):
     first_name: str
@@ -12,6 +13,7 @@ class EmployeeCreate(EmployeeBase):
 class EmployeeResponse(EmployeeBase):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
+    date_created: datetime
     embedding: list[float] | None = None
 
 class EmployeeUpdate(BaseModel):
