@@ -1,11 +1,12 @@
 from pydantic import BaseModel, ConfigDict
+from fastapi import UploadFile
 from uuid import UUID
 from datetime import datetime
 
 class EmployeeBase(BaseModel):
     first_name: str
     last_name: str
-    role: str  #must be changing to enum later on when the roles get defined.
+    role: str  # must be changing to enum later on when the roles get defined.
 
 class EmployeeCreate(EmployeeBase):
     pass

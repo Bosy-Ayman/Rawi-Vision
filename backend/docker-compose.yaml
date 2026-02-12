@@ -1,0 +1,20 @@
+x-minio-common: &minio-common
+  image: quay.io/minio/minio:latest
+  command: server --console-address ":9090" / data
+  ports: 
+    - "9000:9000"
+    - "9090:9090"
+  healthcheck:
+    test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+    interval: 30s
+    timeout: 20s
+    retries: 3
+  env_file:
+    - .env
+
+services:
+  minio1: 
+    <<: *minio-common
+    hostname: minio1
+    volumes:
+      - ./data/compose:/data

@@ -10,7 +10,7 @@ from database import Base
 class Employee(Base):
     __tablename__ = "employees"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4())
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     first_name: Mapped[str] = mapped_column(nullable=False)
     last_name: Mapped[str] = mapped_column(nullable=False)
     role: Mapped[str] = mapped_column(nullable=False) #should be changed later to enum or something, in order to choose between predefined roles
