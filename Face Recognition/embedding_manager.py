@@ -3,10 +3,13 @@ import pickle
 import numpy as np
 import os
 
+
 class EmbeddingManager:
     def __init__(self, db_folder="embeddings_db"):
         self.db_folder = db_folder
         self.dim = 512
+        # [1] Faiss Index
+        # it compares embeddings using L2 distance
         self.index = faiss.IndexFlatL2(self.dim)
         self.names_map = {}
 
@@ -17,7 +20,8 @@ class EmbeddingManager:
 
         for person_name in os.listdir(self.db_folder):
             person_folder = os.path.join(self.db_folder, person_name)
-            if not os.path.isdir(person_folder): continue
+            if not os.path.isdir(person_folder): 
+                continue
                 
             for file in os.listdir(person_folder):
                 if file.endswith('.pkl'):
@@ -39,10 +43,14 @@ class EmbeddingManager:
                     idx_counter += 1
                 
         print(f"--> Database Ready: {self.index.ntotal} vectors loaded.")
-
+    
+    # Pass the new face embedding
     def search_face(self, embedding_vector):
+        
         vector_to_search = np.array([embedding_vector]).astype('float32')
-        if self.index.ntotal == 0: return "Unknown", 99.9
+        
+        if self.index.ntotal == 0: 
+            return "Unknown", 99.9
 
         distances, indices = self.index.search(vector_to_search, k=1)
         
@@ -51,5 +59,6 @@ class EmbeddingManager:
         
         if idx == -1:
             return "Unknown", dist
+        
         name = self.names_map.get(idx, "Unknown")
         return name, dist
