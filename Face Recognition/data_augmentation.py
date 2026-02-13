@@ -76,7 +76,7 @@ def main():
                     save_path = os.path.join(save_dir, save_name)
                     cv2.imwrite(save_path, var)
                     
-                print(f"  -> {person_name}: Generated {len(variations)} images from {file}")
+                print(f"-> {person_name}: Generated {len(variations)} images from {file}")
 
 
 if __name__ == "__main__":
