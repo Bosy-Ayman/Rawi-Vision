@@ -3,7 +3,6 @@ import pickle
 import numpy as np
 import os
 
-
 class EmbeddingManager:
     def __init__(self, db_folder="embeddings_db"):
         self.db_folder = db_folder
