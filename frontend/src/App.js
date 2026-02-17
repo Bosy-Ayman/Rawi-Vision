@@ -6,6 +6,9 @@ import VideoFeedPage from './pages/VideoFeed';
 import SmartSearch from './pages/SmartSearch';
 import Anomalies from './pages/Anomalies';
 import EmployeeInsights from './pages/EmployeeInsights';
+import EmployeeOnboarding from './pages/EmployeeOnboarding';
+import AllEmployees from './pages/AllEmployees';
+import EmployeeDetails from './pages/EmployeeDetails';
 import CustomCursor from './components/CustomCursor';
 
 function App() {
@@ -23,6 +26,9 @@ function App() {
           <Route path="/dashboard/smart-search" element={<SmartSearch />} />
           <Route path="/dashboard/anomalies" element={<Anomalies />} />
           <Route path="/dashboard/employee-insights" element={<EmployeeInsights />} />
+          <Route path="/dashboard/employee-onboarding" element={<EmployeeOnboarding />} />
+          <Route path="/dashboard/all-employees" element={<AllEmployees />} />
+          <Route path="/dashboard/employee/:id" element={<EmployeeDetails />} />
 
 
           {/* Fallback for demo purposes */}

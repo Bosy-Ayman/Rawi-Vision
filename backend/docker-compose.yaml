@@ -1,6 +1,6 @@
 x-minio-common: &minio-common
   image: quay.io/minio/minio:latest
-  command: server --console-address ":9090" / data
+  command: server --console-address ":9090" /data
   ports: 
     - "9000:9000"
     - "9090:9090"
