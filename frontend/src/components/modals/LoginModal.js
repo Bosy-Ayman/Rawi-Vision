@@ -14,7 +14,11 @@ const LoginModal = ({ isOpen, onClose, onSwitchToRegister }) => {
         e.preventDefault();
         if (isValid) {
             // Mock login handling
-            navigate('/dashboard/video-feed');
+            if (email === 'superadmin@superadmin.com') {
+                navigate('/dashboard/all-employees');
+            } else {
+                navigate('/dashboard/video-feed');
+            }
         }
     };
 

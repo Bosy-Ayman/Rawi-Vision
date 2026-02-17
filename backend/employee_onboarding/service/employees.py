@@ -28,10 +28,10 @@ class EmployeeService:
 
         except (SQLAlchemyError, S3Error, Exception) as error:
             self.repository.db.rollback()
-            for obj in uploaded_files:  # maybe i should wrap this in a try except as well?
+            for obj in uploaded_files:    # maybe i should wrap this in a try except as well?
                 self.object_storage.remove_object_from_bucket(obj, self.bucket_name)
             raise error
-    
+
     async def get_all_employees(self):
         try:
             employees = await self.repository.read_all_employees()
