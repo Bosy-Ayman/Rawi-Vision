@@ -34,7 +34,7 @@ while True:
     results = detector.detect_faces(rgb_frame)
     
     for result in results:
-        x, y, w_box,h_box = result['box']
+        x, y, w_box, h_box = result['box']
         confidence = result['confidence']
             
         # Clamp coordinates
