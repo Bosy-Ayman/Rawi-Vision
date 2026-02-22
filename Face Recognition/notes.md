@@ -55,7 +55,7 @@
 
 **Status:** In Progress **Description:** Fusing facial recognition with body re-identification to maintain identity across frames even when the face is not visible.
 
-### 1. Person Detection (YOLO)
+### 1. Person Detection (YOLO)- _[Done]_
 
 - **Model:** YOLO (Nano/Small)
     
@@ -64,7 +64,7 @@
 - **Output:** Bounding boxes $(x_1, y_1, x_2, y_2)$, Class IDs, Confidence Score
     
 
-### 2. Body Feature Extraction (OsNet)
+### 2. Body Feature Extraction (OsNet)- _[Done]_
 
 - **Model:** OsNet
     
@@ -73,7 +73,7 @@
 - **Output:** Person embedding vector representing body appearance
     
 
-### 3. Object Tracking (StrongSORT)
+### 3. Object Tracking (StrongSORT) - _[Done]_
 
 - **Algorithm:** StrongSORT
     
@@ -103,6 +103,8 @@
 - **Output:** Closest matching identity from database + Similarity Score
     
 
-### 7. Identity Fusion
+### 7. Identity Fusion - _[Partially_Done]_
 
 - **Goal:** Combine **Face Identity** (High precision, intermittent availability) with **Body Track ID** (Continuous availability).
+
+### 8. Latency Issues
