@@ -108,3 +108,13 @@
 - **Goal:** Combine **Face Identity** (High precision, intermittent availability) with **Body Track ID** (Continuous availability).
 
 ### 8. Latency Issues
+
+
+---
+- threshold--> the highest distance between the old and the new embedding to 
+face_retry_frames-->kol kam frame y7sal face recognition
+
+- I will try yolo-face instead of mtcnn 
+-  YOLOFace generally providing faster, real-time performance suitable for surveillance, while MTCNN offers superior accuracy in facial landmark localization and alignment, particularly in complex conditions
+  
+---
