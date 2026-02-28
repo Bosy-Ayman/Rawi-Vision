@@ -2,24 +2,40 @@
 
 ## Approaches Tested
 
-1. Pretrained Model (2-Stage): Stage 1 (Anomaly Detector) -> Stage 2 (14-class Crime Classifier). Result: Failed to generalize well. -- it was from a repository not huggingface
-
-2. VLM + Pretrained Model: Used CLIP as VLM + Anomaly Detector. Result: Poor performance.
-
-3. VLM Only : Direct crime classification using Video Transformers (e.g., VideoMAE).
-
-  • Pros: Learns temporal patterns, understands motion, end-to-end training.
-
-  • Cons: Heavy GPU requirements, slower for real time, hard to deploy on edge devices.
+- **Pretrained Model (2-Stage):** Implemented a pipeline from an external repository (non-Hugging Face) featuring an initial Anomaly Detector followed by a 14-class Crime Classifier.
+    
+    - _Result:_ Failed to generalize well across different environments.
+        
+- **VLM + Pretrained Model:** Paired CLIP (acting as the VLM) with a standard anomaly detector.
+    
+    - _Result:_ Poor overall performance and accuracy.
+        
+- **VLM Only (Current Focus):** Utilizing Video Transformers (e.g., VideoMAE) for direct crime classification.
+    
+    - _Pros:_ Effectively learns temporal patterns, understands motion, and supports end-to-end training.
+        
+    - _Cons:_ High GPU consumption and slower inference speeds for real-time applications.
+        
+    I didn't try it yet but i found a video that use it for Threft detection : https://www.youtube.com/watch?v=0o2RGqrmvtA
 
 ## Current Pipeline Status
 
-• Stage 1 (Binary Detection): Using `Nikeytas/videomae-crime-detector-fixed-format`. Status: Works fine for detecting Normal vs. Anomaly.
+- **Stage 1 (Binary Detection):** Implemented `Nikeytas/videomae-crime-detector-fixed-format`.
+    
+    - _Status:_ **Stable**. Works reliably for distinguishing between Normal and Anomaly states.
+        
+- **Stage 2 (Classification):** Testing `OPear/videomae-large-finetuned-UCF-Crime` to categorize 14 specific anomaly classes.
+    
+    - _Status:_ **Reviewing**. Experiencing some misclassification issues; further research and debugging are required to stabilize predictions.
+        
+- **Stage 3 (Weapon Detection):** Sourcing specialized models and data for localized weapon detection.
+    
+    - _Status:_ **In Progress** (Currently researching on Kaggle).
+        
 
-• Stage 2 (Classification): Planning to test `OPear/videomae-large-finetuned-UCF-Crime` for 14-class categorization. -- alot of misclassification
+## Key Observations & Active Optimizations
 
-• Stage 3 (Weapon Detection): I will search on kaggle
-
-## Key Observations & Learnings
-
-• Threshold Differences: There is a noticeable difference in detection thresholds between real-time webcam feeds and standard uploaded videos. This discrepancy needs to be organized and accounted for in the deployment logic.
+- **Environment-Specific Thresholds:** There is a noticeable difference in the optimal confidence thresholds between live webcam feeds and standard uploaded videos. This variance must be explicitly mapped and accounted for within the deployment logic to prevent false positives/negatives.
+    
+- **GPU Optimization via YOLO Trigger (In Progress):** To mitigate the heavy computational cost of the VideoMAE model, a YOLO-based person detection layer is being integrated. The exhaustive anomaly model will only be triggered when a person is detected in the frame, significantly reducing idle GPU load.
+    
