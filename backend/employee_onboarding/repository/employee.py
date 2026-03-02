@@ -12,10 +12,15 @@ class EmployeeRepository:
         self.db = db
     
     async def create_employee(self, employee: EmployeeCreate):
-        new_employee = Employee(first_name = employee.first_name, last_name= employee.last_name, role= employee.role)
-        self.db.add(new_employee)
-        await self.db.flush()
-        return new_employee
+        try:
+            new_employee = Employee(first_name = employee.first_name, last_name= employee.last_name, role= employee.role, embedding_status = "processing")
+            self.db.add(new_employee)
+            await self.db.commit()
+            await self.db.refresh(new_employee)
+            return new_employee
+        except Exception as error:
+            await self.db.rollback()
+            raise error
     
     async def read_all_employees(self):
         result = await self.db.execute(select(Employee))
@@ -28,5 +33,11 @@ class EmployeeRepository:
         return employee
 
     async def delete_employee(self, employee: EmployeeResponse):
-        await self.db.delete(employee)
-        return employee
+        try:
+            await self.db.delete(employee)
+            await self.db.commit()
+            return employee
+        except Exception as error:
+            await self.db.rollback()
+            raise error
+        
