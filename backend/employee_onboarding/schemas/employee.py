@@ -6,7 +6,7 @@ from datetime import datetime
 class EmployeeBase(BaseModel):
     first_name: str
     last_name: str
-    role: str  # must be changing to enum later on when the roles get defined.
+    role: str  # must be changed to enum later on when the roles get defined.
 
 class EmployeeCreate(EmployeeBase):
     pass
@@ -16,9 +16,12 @@ class EmployeeResponse(EmployeeBase):
     id: UUID
     date_created: datetime
     embedding: list[float] | None = None
+    embedding_status : str
+    images: list[str] | None = None
 
 class EmployeeUpdate(BaseModel):
     first_name: str | None = None
     last_name:str | None = None
     role: str | None = None
     embedding: list[float] | None = None
+    embedding_status : str| None =  None

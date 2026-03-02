@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from employee_onboarding.routers.employees import employee_router
-
+from employee_onboarding.routers.employee_images import employee_image_router
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
@@ -14,4 +14,4 @@ app.add_middleware(
 )
 
 app.include_router(employee_router)
-
+app.include_router(employee_image_router)
