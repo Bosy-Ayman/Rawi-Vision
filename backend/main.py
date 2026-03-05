@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from employee_onboarding.routers.employees import employee_router
+from auth.routers.auth import auth_router
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -14,4 +15,5 @@ app.add_middleware(
 )
 
 app.include_router(employee_router)
+app.include_router(auth_router)
 

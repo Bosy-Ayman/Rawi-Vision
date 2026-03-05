@@ -1,0 +1,247 @@
+/* =============================================
+   System User Management page – content styles
+   Sidebar / TopBar come from DashboardLayout
+   ============================================= */
+
+.sum-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1.75rem;
+}
+
+/* ── Card ──────────────────────────────────── */
+.sum-card {
+    background: white;
+    border-radius: 16px;
+    padding: 2rem 2.25rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 16px rgba(0, 0, 0, 0.04);
+}
+
+.sum-card-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0 0 0.4rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.sum-card-subtitle {
+    font-size: 0.85rem;
+    color: #64748b;
+    margin: 0 0 1.5rem;
+}
+
+.sum-count {
+    background: #e2e8f0;
+    color: #475569;
+    font-size: 0.72rem;
+    font-weight: 600;
+    border-radius: 20px;
+    padding: 0.15rem 0.6rem;
+}
+
+/* ── Alerts ────────────────────────────────── */
+.sum-alert {
+    padding: 0.7rem 1rem;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin-bottom: 1.25rem;
+}
+
+.sum-alert--success {
+    background: #f0fdf4;
+    color: #16a34a;
+    border: 1px solid #bbf7d0;
+}
+
+.sum-alert--error {
+    background: #fff1f2;
+    color: #dc2626;
+    border: 1px solid #fecdd3;
+}
+
+/* ── Form ──────────────────────────────────── */
+.sum-form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 0.55fr auto;
+    gap: 1rem;
+    align-items: end;
+}
+
+.sum-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.sum-field label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.sum-field input,
+.sum-field select {
+    padding: 0.7rem 0.9rem;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    color: #1e293b;
+    background: #f8fafc;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    font-family: inherit;
+}
+
+.sum-field input:focus,
+.sum-field select:focus {
+    border-color: #386E9D;
+    box-shadow: 0 0 0 3px rgba(56, 110, 157, 0.12);
+    background: white;
+}
+
+.sum-field input::placeholder {
+    color: #cbd5e1;
+}
+
+.sum-btn-add {
+    padding: 0.7rem 1.5rem;
+    border: none;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    font-family: inherit;
+    background: #d1d5db;
+    color: white;
+    cursor: not-allowed;
+    transition: all 0.2s;
+    white-space: nowrap;
+    align-self: flex-end;
+}
+
+.sum-btn-add--active {
+    background: #386E9D;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(56, 110, 157, 0.3);
+}
+
+.sum-btn-add--active:hover {
+    background: #2c5a85;
+    transform: translateY(-1px);
+}
+
+/* ── Empty state ───────────────────────────── */
+.sum-empty {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: #94a3b8;
+    font-size: 0.9rem;
+    font-style: italic;
+}
+
+/* ── Table ─────────────────────────────────── */
+.sum-table-wrap {
+    overflow-x: auto;
+}
+
+.sum-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+
+.sum-table thead tr {
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.sum-table th {
+    text-align: left;
+    padding: 0.6rem 1rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.sum-table tbody tr {
+    border-bottom: 1px solid #f8fafc;
+    transition: background 0.15s;
+}
+
+.sum-table tbody tr:hover {
+    background: #f8fafc;
+}
+
+.sum-table td {
+    padding: 0.85rem 1rem;
+    color: #334155;
+    vertical-align: middle;
+}
+
+.sum-td-name {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.sum-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: #386E9D;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.82rem;
+    flex-shrink: 0;
+}
+
+/* Role chips */
+.sum-chip {
+    display: inline-block;
+    padding: 0.22rem 0.7rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.sum-chip--hr {
+    background: #eff6ff;
+    color: #1d4ed8;
+    border: 1px solid #bfdbfe;
+}
+
+.sum-chip--manager {
+    background: #f0fdf4;
+    color: #15803d;
+    border: 1px solid #bbf7d0;
+}
+
+/* Remove button */
+.sum-btn-remove {
+    background: none;
+    border: 1.5px solid #fecdd3;
+    color: #dc2626;
+    border-radius: 8px;
+    padding: 0.3rem 0.8rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+}
+
+.sum-btn-remove:hover {
+    background: #fff1f2;
+    border-color: #dc2626;
+}
