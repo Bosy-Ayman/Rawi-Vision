@@ -1,10 +1,43 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { GoogleLogin } from '@react-oauth/google';
+import { authAPI } from '../../api/auth';
 
-const LoginModal = ({ isOpen, onClose, onSwitchToRegister }) => {
+const LoginModal = ({ isOpen, onClose }) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [errorMsg, setErrorMsg] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
     const navigate = useNavigate();
+
+    const handleGoogleSuccess = async (credentialResponse) => {
+        setIsLoading(true);
+        setErrorMsg('');
+        try {
+            // Send the Google ID token to our backend
+            const response = await authAPI.loginWithGoogle(credentialResponse.credential);
+
+            // Save the JWT we get back
+            localStorage.setItem('access_token', response.access_token);
+            localStorage.setItem('user_role', response.role);
+            localStorage.setItem('full_name', response.full_name);
+
+            onClose();
+
+            // Route based on role
+            if (response.role === 'HR') {
+                navigate('/dashboard/employee-onboarding');
+            } else if (response.role === 'Manager') {
+                navigate('/dashboard/video-feed');
+            } else {
+                navigate('/dashboard/video-feed'); // fallback
+            }
+        } catch (err) {
+            setErrorMsg(err.detail || 'Login failed. You may not be registered in the system.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     if (!isOpen) return null;
 
@@ -13,9 +46,11 @@ const LoginModal = ({ isOpen, onClose, onSwitchToRegister }) => {
     const handleSubmit = (e) => {
         e.preventDefault();
         if (isValid) {
-            // Mock login handling
+            // Placeholder for manual email/password login
             if (email === 'superadmin@superadmin.com') {
-                navigate('/dashboard/all-employees');
+                navigate('/admin/system-users');
+            } else if (email === 'hr@hr.com') {
+                navigate('/dashboard/employee-onboarding');
             } else {
                 navigate('/dashboard/video-feed');
             }
@@ -25,8 +60,10 @@ const LoginModal = ({ isOpen, onClose, onSwitchToRegister }) => {
     return (
         <div className="modal-overlay" onClick={onClose}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
-                <button className="modal-close" onClick={onClose}>×</button>
+                <button className="modal-close" onClick={onClose} disabled={isLoading}>×</button>
                 <h2 className="modal-title">Log in</h2>
+
+                {errorMsg && <div className="sum-alert sum-alert--error" style={{ marginBottom: '15px', color: 'red', fontSize: '14px', textAlign: 'center' }}>{errorMsg}</div>}
 
                 <form onSubmit={handleSubmit}>
                     <div className="form-group">
@@ -50,19 +87,21 @@ const LoginModal = ({ isOpen, onClose, onSwitchToRegister }) => {
 
                     <button
                         className={`modal-btn-primary ${isValid ? 'active' : ''}`}
-                        disabled={!isValid}
+                        disabled={!isValid || isLoading}
                     >
-                        Login
+                        {isLoading ? 'Processing...' : 'Login'}
                     </button>
                 </form>
 
-                <button className="modal-btn-google">
-                    <img src="https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg" alt="G" style={{ width: '20px' }} />
-                    Continue with Google
-                </button>
-
-                <div className="modal-footer">
-                    New To Eagle Eye? <span className="modal-link" onClick={onSwitchToRegister}>Create account</span>
+                <div style={{ display: 'flex', justifyContent: 'center', marginTop: '10px', height: '40px' }}>
+                    <GoogleLogin
+                        onSuccess={handleGoogleSuccess}
+                        onError={() => setErrorMsg('Google Login Failed')}
+                        theme="filled_blue"
+                        shape="rectangular"
+                        text="continue_with"
+                        width="300"
+                    />
                 </div>
             </div>
         </div>
