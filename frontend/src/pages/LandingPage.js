@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
 import '../App.css';
 import LoginModal from '../components/modals/LoginModal';
-import RegisterModal from '../components/modals/RegisterModal';
 
 function LandingPage() {
-    const [activeModal, setActiveModal] = useState(null); // 'login', 'register', or null
+    const [activeModal, setActiveModal] = useState(null); // 'login' or null
 
     const openLogin = () => setActiveModal('login');
-    const openRegister = () => setActiveModal('register');
     const closeModal = () => setActiveModal(null);
 
     const features = [
@@ -59,7 +57,6 @@ function LandingPage() {
 
                     <nav className="nav-buttons">
                         <button className="btn-login" onClick={openLogin}>Log In</button>
-                        <button className="btn-register" onClick={openRegister}>Register</button>
                     </nav>
                 </div>
             </header>
@@ -181,13 +178,6 @@ function LandingPage() {
             <LoginModal
                 isOpen={activeModal === 'login'}
                 onClose={closeModal}
-                onSwitchToRegister={openRegister}
-            />
-
-            <RegisterModal
-                isOpen={activeModal === 'register'}
-                onClose={closeModal}
-                onSwitchToLogin={openLogin}
             />
         </div>
     );
