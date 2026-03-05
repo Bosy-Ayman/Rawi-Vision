@@ -9,6 +9,8 @@ from ..repository.employee import EmployeeRepository
 from ..exceptions import EmployeeNotFound
 from database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
+from auth.dependencies import require_manager, require_hr
+from auth.models.system_user import SystemUser
 
 
 employee_router = APIRouter(prefix="/employee", tags=["employees"])
@@ -18,43 +20,66 @@ async def get_employee_repository(db: AsyncSession = Depends(get_db)):
 async def get_employee_service(repo: EmployeeRepository = Depends(get_employee_repository)):
     return EmployeeService(repo)
 
-# reads all employees info
+# reads all employees info (Managers + HR can read)
 @employee_router.get("", response_model=list[EmployeeResponse])
-async def get_all_employees(service: EmployeeService = Depends(get_employee_service)):
+async def get_all_employees(
+    service: EmployeeService = Depends(get_employee_service),
+    current_user: SystemUser = Depends(require_manager)
+):
     try: 
         employees = await service.get_all_employees()  
         return employees
     except EmployeeNotFound as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employees not found")
 
-#creates a new employee
-@employee_router.post("", response_model=EmployeeResponse , status_code=status.HTTP_201_CREATED) #should add the minio image storage here
-async def create_employee(first_name: str = Form(...), last_name: str = Form(...), role: str = Form(...), employee_pictures: list[UploadFile] = File(...), service: EmployeeService = Depends(get_employee_service)):
+#creates a new employee (Only HR can create)
+@employee_router.post("", response_model=EmployeeResponse , status_code=status.HTTP_201_CREATED)
+async def create_employee(
+    first_name: str = Form(...), 
+    last_name: str = Form(...), 
+    role: str = Form(...), 
+    employee_pictures: list[UploadFile] = File(...), 
+    service: EmployeeService = Depends(get_employee_service),
+    current_user: SystemUser = Depends(require_hr)
+):
     employee = EmployeeCreate(first_name=first_name, last_name= last_name, role= role)
     created_employee = await service.create_employee(employee=employee, employee_pictures=employee_pictures)
     return created_employee
 
-# gets an employee by id 
+# gets an employee by id (Managers + HR can read)
 @employee_router.get("/{id}", response_model=EmployeeResponse)
-async def get_employee_by_id(id: uuid.UUID, service: EmployeeService = Depends(get_employee_service)):
+async def get_employee_by_id(
+    id: uuid.UUID, 
+    service: EmployeeService = Depends(get_employee_service),
+    current_user: SystemUser = Depends(require_manager)
+):
     try:
         employee = await service.get_employee_by_id(id)
         return employee
     except EmployeeNotFound as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
 
-# updates employee info partially
+# updates employee info partially (Only HR can update)
 @employee_router.patch("/{id}" , response_model=EmployeeResponse)
-async def update_employee_partially(id: uuid.UUID, employee_new_data: EmployeeUpdate, service: EmployeeService = Depends(get_employee_service)):
+async def update_employee_partially(
+    id: uuid.UUID, 
+    employee_new_data: EmployeeUpdate, 
+    service: EmployeeService = Depends(get_employee_service),
+    current_user: SystemUser = Depends(require_hr)
+):
     try:
         updated_employee = await service.update_employee(id, updated_employee_info=employee_new_data)
         return updated_employee
     except EmployeeNotFound as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
 
-# deletes an employee
+# deletes an employee (Only HR can delete)
 @employee_router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_employee_by_id(id: uuid.UUID, service: EmployeeService = Depends(get_employee_service)):
+async def delete_employee_by_id(
+    id: uuid.UUID, 
+    service: EmployeeService = Depends(get_employee_service),
+    current_user: SystemUser = Depends(require_hr)
+):
     try: 
         await service.delete_employee(id=id)
     except EmployeeNotFound as e:
