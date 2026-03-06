@@ -32,8 +32,8 @@ async def get_all_employees(service: EmployeeService = Depends(get_employee_serv
     try: 
         employees = await service.get_all_employees()  
         return employees
-    except EmployeeNotFound as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employees not found")
+    except Exception as error:
+        raise error
 
 #creates a new employee
 @employee_router.post("", response_model=EmployeeResponse , status_code=status.HTTP_201_CREATED) 
