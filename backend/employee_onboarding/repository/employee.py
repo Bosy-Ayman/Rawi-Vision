@@ -15,11 +15,9 @@ class EmployeeRepository:
         try:
             new_employee = Employee(first_name = employee.first_name, last_name= employee.last_name, role= employee.role, embedding_status = "processing")
             self.db.add(new_employee)
-            await self.db.commit()
-            await self.db.refresh(new_employee)
+            await self.db.flush()
             return new_employee
         except Exception as error:
-            await self.db.rollback()
             raise error
     
     async def read_all_employees(self):
@@ -35,9 +33,7 @@ class EmployeeRepository:
     async def delete_employee(self, employee: EmployeeResponse):
         try:
             await self.db.delete(employee)
-            await self.db.commit()
             return employee
         except Exception as error:
-            await self.db.rollback()
             raise error
         

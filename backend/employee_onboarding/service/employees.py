@@ -9,6 +9,7 @@ from ..exceptions import EmployeeNotFound
 from ..celery_tasks.embedding import create_embedding_task
 from .employee_images import EmployeeImagesService
 from ..schemas.employee import EmployeeResponse
+import asyncio
 
 class EmployeeService:
     def __init__ (self, repository: EmployeeRepository, object_storage:MinioStorageClient, employee_image_service: EmployeeImagesService): # constructor dependency injection
@@ -24,18 +25,20 @@ class EmployeeService:
             for picture in employee_pictures:
                 await self.object_storage.add_object_to_bucket(picture, bucket_name= self.bucket_name, object_name=f"{new_employee.id}/{picture.filename}")
                 uploaded_files.append(picture)
+            await self.repository.db.commit()
+            await self.repository.db.refresh(new_employee)
             # need to figure out a workaround if the celery task fails - using saga pattern 
             create_embedding_task.delay(self.bucket_name, new_employee.id)
             return new_employee
-        except (SQLAlchemyError, S3Error, Exception) as error:
-            self.object_storage.remove_objects_from_bucket(bucket_name=self.bucket_name, object_name=str(new_employee.id))
+        except Exception as error:
+            await self.repository.db.rollback()
+            if new_employee:
+                 self.object_storage.remove_objects_from_bucket(bucket_name=self.bucket_name, object_name=str(new_employee.id))
             raise error
 
     async def get_all_employees(self):
         try:
             employees = await self.repository.read_all_employees()
-            if not employees:
-                raise EmployeeNotFound("No employees found")
             return employees
         except (SQLAlchemyError) as error:
             raise error
@@ -44,9 +47,9 @@ class EmployeeService:
         try:
             employee_data = await self.repository.read_employee_by_id(id)
             employee_images = self.employee_image_service.get_employee_images(employee_id=id)
-            employee_response = EmployeeResponse(id=employee_data.id, date_created=employee_data.date_created, first_name= employee_data.first_name, last_name= employee_data.last_name, role= employee_data.role, embedding= employee_data.embedding, embedding_status= employee_data.embedding_status, images=employee_images["image_urls"])
             if not employee_data:
                 raise EmployeeNotFound("No employees found")
+            employee_response = EmployeeResponse(id=employee_data.id, date_created=employee_data.date_created, first_name= employee_data.first_name, last_name= employee_data.last_name, role= employee_data.role, embedding= employee_data.embedding, embedding_status= employee_data.embedding_status, images=employee_images["image_urls"])
             return employee_response
         except (SQLAlchemyError) as error:
             raise error  #check if the error need to be more descriptive
@@ -58,10 +61,10 @@ class EmployeeService:
                 raise EmployeeNotFound(f"employee with {id} not found")
             await self.repository.delete_employee(employee=employee)
             self.employee_image_service.delete_employee_images(employee_id=employee.id)
-        except (SQLAlchemyError) as error:
-            raise error  
-        except (Exception) as exception_error:
-            raise exception_error
+            await self.repository.db.commit()
+        except Exception as error:
+            await self.repository.db.rollback()
+            raise error
 
     async def update_employee(self, id: uuid.UUID, updated_employee_info: EmployeeUpdate):
         try:
@@ -75,7 +78,7 @@ class EmployeeService:
             await self.repository.db.refresh(employee)
             return employee
         except (SQLAlchemyError) as error:
-            self.repository.db.rollback()
+            await self.repository.db.rollback()
             raise error  
         except (Exception) as exception_error:
             raise exception_error
