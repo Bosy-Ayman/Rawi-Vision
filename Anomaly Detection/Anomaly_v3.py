@@ -82,64 +82,47 @@ workers_live=True
 # ------------------------------------------------------------------------------------
 def build_vlm_prompt() -> str:
     """
-    Build VLM prompt that detects and classifies anomaly types using UCF Crime 14-class taxonomy.
+    Build VLM prompt that detects and classifies anomaly types.
     Returns: Prompt string for anomaly classification
     """
     return """You are a strict surveillance video analyst.
 
 Task: Detect and classify the anomaly in this surveillance frame.
 
-UCF Crime taxonomy:
-- abuse: physical assault, hitting, kicking, punching
-- assault: violent attack, fighting, physical confrontation
-- burglary: breaking into building, forced entry, stealing from property
-- explosion: sudden blast, explosion, explosion aftermath
-- fighting: two or more people engaged in physical combat
-- robbery: taking property by force, armed theft, mugging
-- shooting: gunfire, weapon discharge, shooting incident
-- shoplifting: stealing merchandise from store, concealing items
-- stealing: taking property without permission, theft
-- tagging: graffiti, spray painting, vandal writing on surface
-- vandalism: property destruction, damaging objects, breaking items
+Anomaly types to classify:
+- violence: physical confrontation, striking, weapon use
+- theft: taking items, shoplifting, breaking into containers
+- vandalism: damaging property, graffiti, destruction
+- unusual_behavior: abnormal movements, loitering, suspicious positioning
+- normal: routine activity (if no anomaly detected)
 
 Rules (MUST follow):
 - One short factual sentence only (max 20 words)
 - Describe ONLY what is clearly visible: person's hands, body movement, objects
-- Output format: [CRIME_CLASS] Brief description
+- Output format: [ANOMALY_TYPE] Brief description
 - NEVER mention time, clock, numbers, lighting, weather, emotion, intention
 - NEVER use: appears, seems, might, probably, looks like, trying to, could be
-- If no anomaly detected, output: [normal] Description of routine activity
 
 Examples:
-[abuse] Person striking another person repeatedly.
-[assault] Two individuals engaged in physical altercation.
-[burglary] Person forcing open window to enter building.
-[explosion] Large blast visible with smoke and debris.
-[fighting] Multiple people exchanging punches on ground.
-[robbery] Person forcibly taking bag from pedestrian.
-[shooting] Person holding firearm and firing weapon.
-[shoplifting] Person placing merchandise into concealed bag.
-[stealing] Person taking item from unattended location.
-[tagging] Person spray painting wall surface.
-[vandalism] Person smashing storefront window with object.
-[normal] People walking normally in public space.
+[violence] Person raising fist toward another person's face.
+[theft] Person reaching into open register drawer.
+[vandalism] Person spray painting storefront window.
+[unusual_behavior] Person standing motionless in middle of walkway.
+[normal] People walking and browsing merchandise.
 
 Start now:"""
 
-def extract_anomaly_type(vlm_text: str) -> str:
 
-    match = re.search(r'\[(\w+)\]', vlm_text)
+#  It provides the anomaly type from the vlm_text (description)
+def extract_anomaly_type(vlm_text: str) -> str:
+    match =re.search(r'\[(\w+)\]', vlm_text)
     if match:
-        crime_class = match.group(1).lower()
-        valid_classes = [
-            "abuse", "assault", "burglary", 
-            "explosion", "fighting", "robbery",
-            "shoplifting", "stealing", "tagging",
-            "vandalism", "normal"
-        ]
-        if crime_class in valid_classes:
-            return crime_class
+        atype = match.group(1).lower()
+        valid_types = ["violence", "theft", "trespassing", "vandalism", "unusual_behavior", "normal"]
+        if atype in valid_types:
+            return atype
     return "unknown"
+
 
 # Helpers
 def run_videomae(model, processor, frames):
@@ -303,8 +286,6 @@ def draw_alert_banner(frame, r: dict):
             banner_color = (0, 0, 255)  # Bright red
         elif anomaly_type == "THEFT":
             banner_color = (0, 165, 255)  # Orange
-        elif anomaly_type == "TRESPASSING":
-            banner_color = (255, 0, 0)  # Blue
         elif anomaly_type == "VANDALISM":
             banner_color = (0, 255, 255)  # Yellow
         elif anomaly_type == "UNUSUAL_BEHAVIOR":
@@ -334,6 +315,10 @@ vlm_frame_buffer = deque(maxlen=VIDEO_WINDOW)
 frame_count = 0
 fps_display = 0.0
 last_frame = None
+
+fps_clock = time.time()
+fps_frame_count = 0
+fps_update_interval = 1.0 
 
 while True:
     loop_start = time.time()
@@ -383,11 +368,15 @@ while True:
     draw_alert_banner(frame, r)
 
     cv2.imshow("Anomaly Detection", frame)
-
+    fps_frame_count += 1
+    elapsed_since_update = time.time() - fps_clock
+    
+    if elapsed_since_update >= fps_update_interval:
+        fps_display = fps_frame_count / elapsed_since_update
+        fps_frame_count = 0
+        fps_clock = time.time()
     elapsed_ms = int((time.time() - loop_start) * 1000)
     wait_ms = max(1, frame_delay_ms - elapsed_ms)
-    fps_display = 1000.0 / max(elapsed_ms, 1)
-
     if cv2.waitKey(wait_ms) & 0xFF == ord("q"):
         print("Quit by user.")
         break
