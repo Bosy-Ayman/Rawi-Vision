@@ -4,11 +4,14 @@ import { NavLink, useLocation } from 'react-router-dom';
 const Sidebar = () => {
     const location = useLocation();
 
-    // Admin Journey includes: Add Employee, All Employees (List), and Single Employee Details
-    const isSuperAdminJourney =
+    // HR Journey: employee management pages
+    const isHRJourney =
         location.pathname === '/dashboard/employee-onboarding' ||
         location.pathname === '/dashboard/all-employees' ||
         location.pathname.startsWith('/dashboard/employee/');
+
+    // SuperAdmin Journey: system user management
+    const isSuperAdminJourney = location.pathname === '/admin/system-users';
 
     const standardMenuItems = [
         { name: 'Video Feed', icon: 'video-feed.svg', path: '/dashboard/video-feed' },
@@ -19,13 +22,16 @@ const Sidebar = () => {
         { name: 'Settings', icon: 'settings.svg', path: '/dashboard/settings' }
     ];
 
-    const superAdminMenuItems = [
+    const hrMenuItems = [
         { name: 'Add Employee', icon: 'employee-insights.svg', path: '/dashboard/employee-onboarding' },
-        { name: 'All Employees', icon: 'employee-insights.svg', path: '/dashboard/all-employees' },
-        { name: 'Back to Feed', icon: 'video-feed.svg', path: '/dashboard/video-feed' }
+        { name: 'All Employees', icon: 'employee-insights.svg', path: '/dashboard/all-employees' }
     ];
 
-    const menuItems = isSuperAdminJourney ? superAdminMenuItems : standardMenuItems;
+    const superAdminMenuItems = [
+        { name: 'Add Users', icon: 'employee-insights.svg', path: '/admin/system-users' }
+    ];
+
+    const menuItems = isSuperAdminJourney ? superAdminMenuItems : isHRJourney ? hrMenuItems : standardMenuItems;
 
     return (
         <aside className="sidebar">

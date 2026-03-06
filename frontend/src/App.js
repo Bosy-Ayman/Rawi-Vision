@@ -9,6 +9,7 @@ import EmployeeInsights from './pages/EmployeeInsights';
 import EmployeeOnboarding from './pages/EmployeeOnboarding';
 import AllEmployees from './pages/AllEmployees';
 import EmployeeDetails from './pages/EmployeeDetails';
+import SystemUserManagement from './pages/SystemUserManagement';
 import CustomCursor from './components/CustomCursor';
 
 function App() {
@@ -30,6 +31,7 @@ function App() {
           <Route path="/dashboard/all-employees" element={<AllEmployees />} />
           <Route path="/dashboard/employee/:id" element={<EmployeeDetails />} />
 
+          <Route path="/admin/system-users" element={<SystemUserManagement />} />
 
           {/* Fallback for demo purposes */}
           <Route path="/dashboard/*" element={<VideoFeedPage />} />
