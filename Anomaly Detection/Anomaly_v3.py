@@ -118,7 +118,7 @@ def extract_anomaly_type(vlm_text: str) -> str:
     match =re.search(r'\[(\w+)\]', vlm_text)
     if match:
         atype = match.group(1).lower()
-        valid_types = ["violence", "theft", "trespassing", "vandalism", "unusual_behavior", "normal"]
+        valid_types = ["violence", "theft", "vandalism", "unusual_behavior", "normal"]
         if atype in valid_types:
             return atype
     return "unknown"
