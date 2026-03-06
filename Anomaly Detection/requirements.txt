@@ -1,7 +1,6 @@
-numpy==2.4.2
-opencv_contrib_python==4.13.0.92
-opencv_python==4.13.0.92
-Pillow==12.1.1
 torch==2.5.1
-torch==2.10.0
-transformers==5.3.0
+torchvision==0.20.1
+opencv-python==4.13.0.92
+numpy==2.4.2
+pillow==12.1.1
+transformers>=4.30.0
