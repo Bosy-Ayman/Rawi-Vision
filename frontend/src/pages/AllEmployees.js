@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
+import { employeeAPI } from '../api/employees';
 import './AllEmployees.css';
 
 const AllEmployees = () => {
@@ -13,18 +14,17 @@ const AllEmployees = () => {
     const [selectedEmployee, setSelectedEmployee] = useState(null);
     const [updateForm, setUpdateForm] = useState({ first_name: '', last_name: '', role: '' });
     const [isUpdating, setIsUpdating] = useState(false);
+    const [showDeleteModal, setShowDeleteModal] = useState(false); // Added for delete functionality
     const navigate = useNavigate(); // Keep navigate for the Add New button
 
     const fetchEmployees = async () => {
         try {
-            const response = await fetch('http://127.0.0.1:8000/employee');
-            if (!response.ok) throw new Error('Failed to fetch employees');
-            const data = await response.json();
+            const data = await employeeAPI.getAllEmployees();
             setEmployees(data);
-        } catch (error) {
-            console.error('Error:', error);
+            setIsLoading(false);
+        } catch (err) {
+            console.error("Failed to fetch employees:", err);
             // Optionally set an error state here if needed for display
-        } finally {
             setIsLoading(false);
         }
     };
@@ -47,13 +47,8 @@ const AllEmployees = () => {
         e.preventDefault();
         setIsUpdating(true);
         try {
-            const response = await fetch(`http://127.0.0.1:8000/employee/${selectedEmployee.id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(updateForm),
-            });
-
-            if (response.ok) {
+            const response = await employeeAPI.updateEmployee(selectedEmployee.id, updateForm); // Changed to employeeAPI.updateEmployee
+            if (response) { // employeeAPI.updateEmployee should return the updated employee or true/false
                 setIsEditModalOpen(false);
                 fetchEmployees(); // Refresh the list
             } else {
@@ -62,6 +57,22 @@ const AllEmployees = () => {
         } catch (error) {
             console.error('Update error:', error);
             alert('Error connecting to server');
+        } finally {
+            setIsUpdating(false);
+        }
+    };
+
+    // Added handleDelete function based on the provided snippet's content
+    const handleDelete = async () => {
+        setIsUpdating(true); // Reusing isUpdating for delete operation feedback
+        try {
+            await employeeAPI.deleteEmployee(selectedEmployee.id);
+            setEmployees(employees.filter(emp => emp.id !== selectedEmployee.id));
+            setShowDeleteModal(false);
+            setSelectedEmployee(null);
+        } catch (err) {
+            console.error("Failed to delete employee:", err);
+            alert('Error connecting to server'); // Added alert for delete error
         } finally {
             setIsUpdating(false);
         }

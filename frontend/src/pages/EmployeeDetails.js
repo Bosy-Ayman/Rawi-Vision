@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
+import { employeeAPI } from '../api/employees';
 import './EmployeeDetails.css';
 
 const EmployeeDetails = () => {
@@ -11,35 +12,26 @@ const EmployeeDetails = () => {
     const [error, setError] = useState(null);
 
     useEffect(() => {
+        const fetchEmployeeDetails = async () => {
+            try {
+                const data = await employeeAPI.getEmployeeById(id);
+                setEmployee(data);
+            } catch (err) {
+                setError(err.detail || err.message || 'Employee not found');
+            } finally {
+                setLoading(false);
+            }
+        };
+
         fetchEmployeeDetails();
     }, [id]);
-
-    const fetchEmployeeDetails = async () => {
-        try {
-            const response = await fetch(`http://127.0.0.1:8000/employee/${id}`);
-            if (!response.ok) throw new Error('Employee not found');
-            const data = await response.json();
-            setEmployee(data);
-        } catch (err) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
-    };
 
     const handleDelete = async () => {
         if (!window.confirm('Are you sure you want to delete this employee?')) return;
 
         try {
-            const response = await fetch(`http://127.0.0.1:8000/employee/${id}`, {
-                method: 'DELETE',
-            });
-
-            if (response.status === 204) {
-                navigate('/dashboard/all-employees');
-            } else {
-                throw new Error('Failed to delete');
-            }
+            await employeeAPI.deleteEmployee(id);
+            navigate('/dashboard/all-employees');
         } catch (error) {
             alert('Error deleting employee');
         }

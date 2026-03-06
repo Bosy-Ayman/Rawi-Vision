@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
+import { employeeAPI } from '../api/employees';
 import './EmployeeOnboarding.css'; // We'll create this specific CSS file
 
 const EmployeeOnboarding = () => {
@@ -59,16 +60,16 @@ const EmployeeOnboarding = () => {
                 formData.append('role', emp.role);
                 formData.append('employee_pictures', emp.photo);
 
-                const response = await fetch('http://127.0.0.1:8000/employee', {
-                    method: 'POST',
-                    body: formData,
-                });
-
-                if (response.ok) {
+                try {
+                    const data = await employeeAPI.createEmployee(formData);
                     currentSuccessCount++;
-                } else {
-                    const errorData = await response.json();
-                    errors.push(`Row ${i + 1}: ${errorData.detail || 'Failed to upload'}`);
+                    // Optionally, you could store individual success messages here if needed
+                } catch (error) {
+                    console.error(`Error uploading employee at row ${i + 1}: `, error);
+                    const errorMessage = error.response && error.response.data && error.response.data.detail
+                        ? error.response.data.detail
+                        : error.message || 'Failed to upload';
+                    errors.push(`Row ${i + 1}: ${errorMessage} `);
                 }
             }
 
@@ -80,7 +81,7 @@ const EmployeeOnboarding = () => {
             } else if (errors.length > 0) {
                 setSubmitStatus('error');
                 console.error("Errors:", errors);
-                alert(`Some employees failed to upload:\n${errors.join('\n')}`);
+                alert(`Some employees failed to upload: \n${errors.join('\n')} `);
             }
 
         } catch (error) {
@@ -124,7 +125,7 @@ const EmployeeOnboarding = () => {
 
                             <div className="row-content">
                                 <div className="photo-upload-section">
-                                    <div className="photo-preview" onClick={() => document.getElementById(`photo-upload-${index}`).click()}>
+                                    <div className="photo-preview" onClick={() => document.getElementById(`photo - upload - ${index} `).click()}>
                                         {emp.photoPreview ? (
                                             <img src={emp.photoPreview} alt="Preview" />
                                         ) : (
@@ -135,7 +136,7 @@ const EmployeeOnboarding = () => {
                                     </div>
                                     <input
                                         type="file"
-                                        id={`photo-upload-${index}`}
+                                        id={`photo - upload - ${index} `}
                                         className="hidden-input"
                                         accept="image/*"
                                         onChange={(e) => handlePhotoChange(index, e)}
