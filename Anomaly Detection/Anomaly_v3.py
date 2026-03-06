@@ -92,7 +92,6 @@ Task: Detect and classify the anomaly in this surveillance frame.
 Anomaly types to classify:
 - violence: physical confrontation, striking, weapon use
 - theft: taking items, shoplifting, breaking into containers
-- trespassing: unauthorized area entry, climbing barriers, restricted zones
 - vandalism: damaging property, graffiti, destruction
 - unusual_behavior: abnormal movements, loitering, suspicious positioning
 - normal: routine activity (if no anomaly detected)
@@ -107,7 +106,6 @@ Rules (MUST follow):
 Examples:
 [violence] Person raising fist toward another person's face.
 [theft] Person reaching into open register drawer.
-[trespassing] Person climbing over fence in restricted area.
 [vandalism] Person spray painting storefront window.
 [unusual_behavior] Person standing motionless in middle of walkway.
 [normal] People walking and browsing merchandise.
@@ -288,8 +286,6 @@ def draw_alert_banner(frame, r: dict):
             banner_color = (0, 0, 255)  # Bright red
         elif anomaly_type == "THEFT":
             banner_color = (0, 165, 255)  # Orange
-        elif anomaly_type == "TRESPASSING":
-            banner_color = (255, 0, 0)  # Blue
         elif anomaly_type == "VANDALISM":
             banner_color = (0, 255, 255)  # Yellow
         elif anomaly_type == "UNUSUAL_BEHAVIOR":
@@ -319,6 +315,10 @@ vlm_frame_buffer = deque(maxlen=VIDEO_WINDOW)
 frame_count = 0
 fps_display = 0.0
 last_frame = None
+
+fps_clock = time.time()
+fps_frame_count = 0
+fps_update_interval = 1.0 
 
 while True:
     loop_start = time.time()
@@ -368,11 +368,15 @@ while True:
     draw_alert_banner(frame, r)
 
     cv2.imshow("Anomaly Detection", frame)
-
+    fps_frame_count += 1
+    elapsed_since_update = time.time() - fps_clock
+    
+    if elapsed_since_update >= fps_update_interval:
+        fps_display = fps_frame_count / elapsed_since_update
+        fps_frame_count = 0
+        fps_clock = time.time()
     elapsed_ms = int((time.time() - loop_start) * 1000)
     wait_ms = max(1, frame_delay_ms - elapsed_ms)
-    fps_display = 1000.0 / max(elapsed_ms, 1)
-
     if cv2.waitKey(wait_ms) & 0xFF == ord("q"):
         print("Quit by user.")
         break
