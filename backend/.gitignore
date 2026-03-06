@@ -3,3 +3,4 @@ data/compose
 __pycache__/
 *.py[cod]
 *$py.class
+backend/data/
