@@ -23,13 +23,6 @@
 - **Stage 1 (Binary Detection):** Implemented `Nikeytas/videomae-crime-detector-fixed-format`.
     
     - _Status:_ **Stable**. Works reliably for distinguishing between Normal and Anomaly states.
-    - Model : https://huggingface.co/OPear/videomae-large-finetuned-UCF-Crime
-        
-- **Stage 2 (Classification):** Testing `OPear/videomae-large-finetuned-UCF-Crime` to categorize 14 specific anomaly classes.
-    
-    - _Status:_ **Reviewing**. Experiencing some misclassification issues; further research and debugging are required to stabilize predictions.
-    - _Dataset for testing:_  https://www.kaggle.com/code/abduulrahmankhalid/real-time-violence-detection-mobilenet-bi-lstm/notebook
-        
   
 - **Stage 4 (VLM)**  to describe what happened 
    - _Status:_ **Done** SmolVLM .

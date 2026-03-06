@@ -12,7 +12,7 @@ from transformers import (
     AutoProcessor,
     AutoModelForVision2Seq,
     BitsAndBytesConfig,   #used for quantization to allow ai models to run on smaller gpus
-)g
+)
 from PIL import Image
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
