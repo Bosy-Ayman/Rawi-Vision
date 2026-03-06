@@ -82,49 +82,64 @@ workers_live=True
 # ------------------------------------------------------------------------------------
 def build_vlm_prompt() -> str:
     """
-    Build VLM prompt that detects and classifies anomaly types.
+    Build VLM prompt that detects and classifies anomaly types using UCF Crime 14-class taxonomy.
     Returns: Prompt string for anomaly classification
     """
     return """You are a strict surveillance video analyst.
 
 Task: Detect and classify the anomaly in this surveillance frame.
 
-Anomaly types to classify:
-- violence: physical confrontation, striking, weapon use
-- theft: taking items, shoplifting, breaking into containers
-- trespassing: unauthorized area entry, climbing barriers, restricted zones
-- vandalism: damaging property, graffiti, destruction
-- unusual_behavior: abnormal movements, loitering, suspicious positioning
-- normal: routine activity (if no anomaly detected)
+UCF Crime taxonomy:
+- abuse: physical assault, hitting, kicking, punching
+- assault: violent attack, fighting, physical confrontation
+- burglary: breaking into building, forced entry, stealing from property
+- explosion: sudden blast, explosion, explosion aftermath
+- fighting: two or more people engaged in physical combat
+- robbery: taking property by force, armed theft, mugging
+- shooting: gunfire, weapon discharge, shooting incident
+- shoplifting: stealing merchandise from store, concealing items
+- stealing: taking property without permission, theft
+- tagging: graffiti, spray painting, vandal writing on surface
+- vandalism: property destruction, damaging objects, breaking items
 
 Rules (MUST follow):
 - One short factual sentence only (max 20 words)
 - Describe ONLY what is clearly visible: person's hands, body movement, objects
-- Output format: [ANOMALY_TYPE] Brief description
+- Output format: [CRIME_CLASS] Brief description
 - NEVER mention time, clock, numbers, lighting, weather, emotion, intention
 - NEVER use: appears, seems, might, probably, looks like, trying to, could be
+- If no anomaly detected, output: [normal] Description of routine activity
 
 Examples:
-[violence] Person raising fist toward another person's face.
-[theft] Person reaching into open register drawer.
-[trespassing] Person climbing over fence in restricted area.
-[vandalism] Person spray painting storefront window.
-[unusual_behavior] Person standing motionless in middle of walkway.
-[normal] People walking and browsing merchandise.
+[abuse] Person striking another person repeatedly.
+[assault] Two individuals engaged in physical altercation.
+[burglary] Person forcing open window to enter building.
+[explosion] Large blast visible with smoke and debris.
+[fighting] Multiple people exchanging punches on ground.
+[robbery] Person forcibly taking bag from pedestrian.
+[shooting] Person holding firearm and firing weapon.
+[shoplifting] Person placing merchandise into concealed bag.
+[stealing] Person taking item from unattended location.
+[tagging] Person spray painting wall surface.
+[vandalism] Person smashing storefront window with object.
+[normal] People walking normally in public space.
 
 Start now:"""
 
-
-#  It provides the anomaly type from the vlm_text (description)
 def extract_anomaly_type(vlm_text: str) -> str:
-    match =re.search(r'\[(\w+)\]', vlm_text)
-    if match:
-        atype = match.group(1).lower()
-        valid_types = ["violence", "theft", "trespassing", "vandalism", "unusual_behavior", "normal"]
-        if atype in valid_types:
-            return atype
-    return "unknown"
 
+    match = re.search(r'\[(\w+)\]', vlm_text)
+    if match:
+        crime_class = match.group(1).lower()
+        valid_classes = [
+            "abuse", "assault", "burglary", 
+            "explosion", "fighting", "robbery",
+            "shoplifting", "stealing", "tagging",
+            "vandalism", "normal"
+        ]
+        if crime_class in valid_classes:
+            return crime_class
+    return "unknown"
 
 # Helpers
 def run_videomae(model, processor, frames):
