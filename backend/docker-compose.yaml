@@ -23,14 +23,28 @@ services:
     container_name: rabbitmq
     restart: always
     ports:
-      - 5672:5672
-      - 15672:15672
+      - "5672:5672"
+      - "15672:15672"
     configs:
       - source: rabbitmq-plugins
         target: /etc/rabbitmq/enabled_plugins
     volumes:
       - rabbitmq-lib:/var/lib/rabbitmq/
       - rabbitmq-log:/var/log/rabbitmq
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    # TODO: Define ports and environment for Zookeeper
+    ports:
+      - "22181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    # TODO: Define Kafka environment and broker settings
+    depends_on:
+      - zookeeper
+    ports:
+      - "29092:29092"
 
 configs:
   rabbitmq-plugins:

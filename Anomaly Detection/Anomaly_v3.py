@@ -15,6 +15,8 @@ from transformers import (
 )
 from PIL import Image
 
+# TODO: Define Kafka producer imports here
+
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 #----------------------  Config -------------------------------------------
@@ -56,7 +58,7 @@ s3_model = AutoModelForVision2Seq.from_pretrained(
     device_map="auto",
     torch_dtype=torch.float16,
     low_cpu_mem_usage=True,
-    attn_implementation="sdpa",
+    attn_implementation="eager",
 ).eval()
 
 #---------------------------------- Shared state ---------------------------------------
@@ -78,6 +80,15 @@ infer_queue =queue.Queue(maxsize=1)
 vlm_queue= queue.Queue(maxsize=1)
 workers_live=True 
 
+# -------------------------- Event Publishing Skeleton ---------------------------------------
+
+def setup_event_producer():
+    # TODO: Logic to initialize the event queue producer (Kafka)
+    pass
+
+def publish_incident_event(event_data):
+    # TODO: Logic to send the anomaly incident to the queue
+    pass
 
 # ------------------------------------------------------------------------------------
 def build_vlm_prompt() -> str:
@@ -226,6 +237,9 @@ def vlm_worker():
 
             if DEVICE == "cuda":
                 torch.cuda.empty_cache()
+
+            # TODO: Publish the detection results to the backend module
+            # publish_incident_event(vlm_result)
 
         except Exception as e:
             print(f" VLM ERROR {e}")
