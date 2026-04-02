@@ -3,10 +3,13 @@ import os
 import pickle
 import numpy as np
 from mtcnn import MTCNN
+from torch import device
+from ultralytics import YOLO
 from keras_facenet import FaceNet
 
 # ---------------------- Models--------------------
-detector = MTCNN()
+print("Using device:", device)
+detector = YOLO("yolov12m-face.pt").to(device)
 embedder = FaceNet()
 
 def create_embedding(person_name, image_folders, embeddings_folder="embeddings_db"):
@@ -33,10 +36,10 @@ def create_embedding(person_name, image_folders, embeddings_folder="embeddings_d
             rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
                 
             # [1] MTCNN
-            faces = detector.detect_faces(rgb_image)
+            faces = detector(rgb_image, verbose=False, conf=0.6)
                 
-            # BUG FIX: Ensure at least one face was detected before accessing faces[0]
-            if len(faces) == 0:
+          
+            if len(faces[0].boxes) == 0:
                 errors.append(f"No face detected in {filepath}")
                 continue
                 
