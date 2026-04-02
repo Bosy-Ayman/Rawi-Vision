@@ -15,7 +15,14 @@ from transformers import (
 )
 from PIL import Image
 
-# TODO: Define Kafka producer imports here
+import cv2
+import base64
+import json
+from confluent_kafka import Producer as KafkaProducer
+
+KAFKA_BROKER = "localhost:29092"
+KAFKA_TOPIC = "anomaly-incidents"
+_kafka_producer: KafkaProducer | None = None
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -63,6 +70,7 @@ s3_model = AutoModelForVision2Seq.from_pretrained(
 
 #---------------------------------- Shared state ---------------------------------------
 
+
 """ 
  Camera Thread:   Grabs a frame ==> Puts it in infer_queue.
  Stage 1 Thread:  Pulls from infer_queue ==> Updates detection_result.
@@ -83,12 +91,42 @@ workers_live=True
 # -------------------------- Event Publishing Skeleton ---------------------------------------
 
 def setup_event_producer():
-    # TODO: Logic to initialize the event queue producer (Kafka)
-    pass
+    """Initialize the Kafka producer. Call once at startup."""
+    global _kafka_producer
+    try:
+        _kafka_producer = KafkaProducer({"bootstrap.servers": KAFKA_BROKER})
+        print(f"[Kafka] Producer connected to {KAFKA_BROKER}")
+    except Exception as e:
+        print(f"[Kafka] Producer init failed: {e}")
+        _kafka_producer = None
 
-def publish_incident_event(event_data):
-    # TODO: Logic to send the anomaly incident to the queue
-    pass
+
+def publish_incident_event(frame_rgb, anomaly_type: str, description: str, confidence_score: float):
+    """Encode the frame as base64 and publish an anomaly event to Kafka."""
+    if _kafka_producer is None:
+        print("[Kafka] Producer not initialized, skipping publish.")
+        return
+    try:
+        # Encode evidence frame as JPEG base64
+        _, buffer = cv2.imencode(".jpg", cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR))
+        image_b64 = base64.b64encode(buffer).decode("utf-8")
+
+        event = {
+            "anomaly_type": anomaly_type,
+            "description": description,
+            "confidence_score": confidence_score,
+            "camera_id": "default",
+            "image_b64": image_b64,
+        }
+        _kafka_producer.produce(
+            KAFKA_TOPIC,
+            key="anomaly",
+            value=json.dumps(event).encode("utf-8"),
+        )
+        _kafka_producer.poll(0)  # Flush internal buffer
+        print(f"[Kafka] Published: {anomaly_type} | {description[:60]}")
+    except Exception as e:
+        print(f"[Kafka] Publish failed: {e}")
 
 # ------------------------------------------------------------------------------------
 def build_vlm_prompt() -> str:
@@ -238,8 +276,15 @@ def vlm_worker():
             if DEVICE == "cuda":
                 torch.cuda.empty_cache()
 
-            # TODO: Publish the detection results to the backend module
-            # publish_incident_event(vlm_result)
+            # Publish detection to Kafka so the backend can save it
+            with detection_lock:
+                current_score = detection_result.get("s1_score", 0.0)
+            publish_incident_event(
+                frame_rgb=frame_rgb,
+                anomaly_type=anomaly_type,
+                description=raw,
+                confidence_score=current_score,
+            )
 
         except Exception as e:
             print(f" VLM ERROR {e}")
@@ -315,6 +360,10 @@ t_infer = threading.Thread(target=inference_worker, daemon=True)
 t_vlm = threading.Thread(target=vlm_worker, daemon=True)
 t_infer.start()
 t_vlm.start()
+
+# Connect to Kafka now that all functions are defined
+setup_event_producer()
+
 
 cap = cv2.VideoCapture('videos/118956-716230948_small.mp4')
 if not cap.isOpened():
