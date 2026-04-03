@@ -9,6 +9,7 @@ import httpx
 import uuid
 from ..schemas.employee import EmployeeUpdate
 from ..utils.minio_storage_client import MinioStorageClient
+import asyncio
 
 BASE_URL = "http://localhost:8000"
 app = Celery('tasks', broker='amqp://guest:guest@localhost:5672//') # from the celery documentation: In production you’ll want to run the worker in the background as a daemon. To do this you need to use the tools provided by your platform, or something like supervisord (see Daemonization for more information).
@@ -46,7 +47,7 @@ def generate_embedding(images_bytes):
     return None
 
 @app.task
-def create_embedding_task(bucket_name, employee_id: uuid.UUID): #generates the embedding and puts it in the database
+def create_embedding_task(bucket_name, employee_id: str): #generates the embedding and puts it in the database
     try:
         object_storage = MinioStorageClient()
         images_bytes = object_storage.get_objects_binary(bucket_name=bucket_name, prefix=f"{employee_id}")

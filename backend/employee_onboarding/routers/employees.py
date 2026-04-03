@@ -26,7 +26,7 @@ def get_employee_image_service(object_storage_client: MinioStorageClient = Depen
 async def get_employee_repository(db: AsyncSession = Depends(get_db)):
     return EmployeeRepository(db=db)
 
-async def get_employee_service(repo: EmployeeRepository = Depends(get_employee_repository)), object_storage:MinioStorageClient = Depends(get_minio_client()), employee_image_service: EmployeeImagesService=Depends(get_employee_image_service)):
+async def get_employee_service(repo: EmployeeRepository = Depends(get_employee_repository), object_storage:MinioStorageClient = Depends(get_minio_client), employee_image_service: EmployeeImagesService=Depends(get_employee_image_service)):
     return EmployeeService(repository=repo, object_storage=object_storage, employee_image_service=employee_image_service)
 
 # reads all employees info (Managers + HR can read)
@@ -38,8 +38,8 @@ async def get_all_employees(
     try: 
         employees = await service.get_all_employees()  
         return employees
-    except EmployeeNotFound as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employees not found")
+    except Exception as error:
+        raise error
 
 #creates a new employee (Only HR can create)
 @employee_router.post("", response_model=EmployeeResponse , status_code=status.HTTP_201_CREATED)
