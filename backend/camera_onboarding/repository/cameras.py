@@ -10,7 +10,7 @@ class CameraRepository:
     
     async def create_camera_instance(self, camera:CameraCreate):
         try:
-            new_camera_instance = Camera(room = camera.room, building = camera.building, mac_address = camera.mac_address)
+            new_camera_instance = Camera(room = camera.room, building = camera.building, mac_address = camera.mac_address, username= camera.username, password= camera.password)
             self.db.add(new_camera_instance)
             await self.db.flush()
             return new_camera_instance
@@ -28,6 +28,14 @@ class CameraRepository:
     async def get_camera_by_id(self, id: UUID):
         try:
             result = await self.db.execute(select(Camera).where(Camera.id == id))
+            camera = result.scalars().one_or_none()
+            return camera
+        except Exception as error:
+            raise error
+    
+    async def get_camera_by_mac_address(self, mac_address:str):
+        try:
+            result = await self.db.execute(select(Camera).where(Camera.mac_address == mac_address))
             camera = result.scalars().one_or_none()
             return camera
         except Exception as error:
