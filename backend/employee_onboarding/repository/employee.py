@@ -1,5 +1,4 @@
 from fastapi import UploadFile, Form, File
-from database import db_dependency
 from ..models.employee import Employee
 from sqlalchemy import select
 import uuid

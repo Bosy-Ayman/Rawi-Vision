@@ -23,9 +23,9 @@ async def get_all_cameras(service: CameraService = Depends(get_camera_service)):
         raise error
 
 @camera_router.post("", response_model=CameraResponse, status_code= status.HTTP_201_CREATED)
-async def create_camera(room: str = Form(...), building: str = Form(...), mac_address: str = Form(...), service: CameraService = Depends(get_camera_service)):
+async def create_camera(room: str = Form(...), building: str = Form(...), mac_address: str = Form(...), username: str = Form(...), password: str = Form(...), service: CameraService = Depends(get_camera_service)):
     try:
-        camera = CameraCreate(room=room, building=building, mac_address=mac_address)
+        camera = CameraCreate(room=room, building=building, mac_address=mac_address, username=username, password=password)
         created_camera = await service.create_camera_instance(camera=camera)
         return created_camera
     except Exception as error:

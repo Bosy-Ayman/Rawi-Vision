@@ -13,4 +13,7 @@ class Camera(Base):
     room: Mapped[str] = mapped_column(nullable=False)
     building: Mapped[str] = mapped_column(nullable=False)
     mac_address: Mapped[str] = mapped_column(nullable=False)
+    username: Mapped[str] = mapped_column(nullable=False)
+    password: Mapped[str] = mapped_column(nullable=False)
     date_created: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
