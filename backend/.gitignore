@@ -6,3 +6,5 @@ __pycache__/
 backend/data/
 data/compose
 venv
+pgvector
+data/*
