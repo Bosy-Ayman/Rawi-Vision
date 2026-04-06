@@ -26,5 +26,3 @@ app.include_router(camera_discovery_router)
 app.include_router(ingestion_router)
 app.include_router(stream_router)
 
-
-

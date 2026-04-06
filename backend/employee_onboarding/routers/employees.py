@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..utils.minio_storage_client import MinioStorageClient
 from auth.dependencies import require_manager, require_hr
 from auth.models.system_user import SystemUser
+from typing import List, Annotated
 
 employee_router = APIRouter(prefix="/employee", tags=["employees"])
 
@@ -30,7 +31,7 @@ async def get_employee_service(repo: EmployeeRepository = Depends(get_employee_r
 
 # reads all employees info (Managers + HR can read)
 @employee_router.get("", response_model=list[EmployeeResponse])
-async def get_all_employees(service: EmployeeService = Depends(get_employee_service), current_user: SystemUser = Depends(require_manager)):
+async def get_all_employees(service: EmployeeService = Depends(get_employee_service)):
     try: 
         employees = await service.get_all_employees()  
         return employees
@@ -39,7 +40,7 @@ async def get_all_employees(service: EmployeeService = Depends(get_employee_serv
 
 #creates a new employee (Only HR can create)
 @employee_router.post("", response_model=EmployeeResponse , status_code=status.HTTP_201_CREATED)
-async def create_employee(first_name: str = Form(...), last_name: str = Form(...), role: str = Form(...), employee_pictures: list[UploadFile] = File(...), service: EmployeeService = Depends(get_employee_service),current_user: SystemUser = Depends(require_hr)):
+async def create_employee(first_name: str = Form(...), last_name: str = Form(...), role: str = Form(...), employee_pictures: list[Annotated[UploadFile, File()]] = File(...), service: EmployeeService = Depends(get_employee_service)):
     try: 
         employee = EmployeeCreate(first_name=first_name, last_name= last_name, role= role)
         created_employee = await service.create_employee(employee=employee, employee_pictures=employee_pictures)
@@ -49,7 +50,7 @@ async def create_employee(first_name: str = Form(...), last_name: str = Form(...
 
 # gets an employee by id (Managers + HR can read)
 @employee_router.get("/{id}", response_model=EmployeeResponse)
-async def get_employee_by_id(id: uuid.UUID, service: EmployeeService = Depends(get_employee_service), current_user: SystemUser = Depends(require_manager)):
+async def get_employee_by_id(id: uuid.UUID, service: EmployeeService = Depends(get_employee_service)):
     try:
         employee = await service.get_employee_by_id(id)
         return employee
@@ -58,7 +59,7 @@ async def get_employee_by_id(id: uuid.UUID, service: EmployeeService = Depends(g
 
 # updates employee info partially (Only HR can update)
 @employee_router.patch("/{id}" , response_model=EmployeeResponse)
-async def update_employee_partially(id: uuid.UUID, employee_new_data: EmployeeUpdate, service: EmployeeService = Depends(get_employee_service),current_user: SystemUser = Depends(require_hr)):
+async def update_employee_partially(id: uuid.UUID, employee_new_data: EmployeeUpdate, service: EmployeeService = Depends(get_employee_service)):
     try:
         updated_employee = await service.update_employee(id, updated_employee_info=employee_new_data)
         return updated_employee
@@ -67,7 +68,7 @@ async def update_employee_partially(id: uuid.UUID, employee_new_data: EmployeeUp
 
 # deletes an employee (Only HR can delete)
 @employee_router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_employee_by_id(id: uuid.UUID, service: EmployeeService = Depends(get_employee_service),current_user: SystemUser = Depends(require_hr)):
+async def delete_employee_by_id(id: uuid.UUID, service: EmployeeService = Depends(get_employee_service)):
     try: 
         await service.delete_employee(id=id)
     except EmployeeNotFound as e:

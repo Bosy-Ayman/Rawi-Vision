@@ -4,10 +4,18 @@ import redis
 import json
 from uuid import uuid4
 from ..utils.redis import redis_client
+from ..celery_tasks.face_recognition import run_face_recognition_logic
 
 class IngestionService:
     def __init__(self, service: CameraMetadataService):
         self.service = service
+        self.db_config =  {
+                "host": "localhost",
+                "port": 5432,
+                "dbname": "rawivision_db",
+                "user": "shahd",
+                "password": "password"
+            }
     
     async def get_online_cameras(self):
         cameras = await self.service.get_all_camera_metadata() # calling this instead of the sync function beacuse this one takes less time for running
@@ -22,6 +30,7 @@ class IngestionService:
             rtsp_urls = camera.rtsp_urls
             task_id = str(uuid4())
             capture_rtsp_video.delay(rtsp_urls, camera.mac_address, task_id, duration=30)
+            run_face_recognition_logic.delay(self.db_config, rtsp_urls)
             task_ids.append(task_id) 
         redis_client.set('task_ids', json.dumps(task_ids))
 
