@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from sqlalchemy.orm import DeclarativeBase
 
 # the username:password@localhost:5432/databaseName
-URL_DATABASE = 'postgresql+asyncpg://shahd:password@localhost/rawivision_db' 
+URL_DATABASE = 'postgresql+asyncpg://shahd:password@localhost:5433/rawivision_db' 
 engine = create_async_engine(URL_DATABASE)
 sessionlocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
