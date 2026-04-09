@@ -1,33 +1,75 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
+import { cameraAPI } from '../api/cameras';
+import CameraCard from '../components/camera/CameraCard';
+import './VideoFeed.css';
 
 const VideoFeedPage = () => {
-    const feeds = [1, 2, 3, 4]; // 4 cameras
+    const [cameras, setCameras] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [hasAccess, setHasAccess] = useState(true);
+
+    useEffect(() => {
+        // Enforce role access control locally
+        const role = localStorage.getItem('user_role');
+        if (role !== 'Manager' && role !== 'HR') {
+            setHasAccess(false);
+            setLoading(false);
+            return;
+        }
+
+        cameraAPI.getAllCameras()
+            .then((data) => {
+                setCameras(data || []);
+                setLoading(false);
+            })
+            .catch((err) => {
+                console.error("Failed to load cameras", err);
+                setError(err.detail || 'Failed to load cameras.');
+                setLoading(false);
+            });
+    }, []);
+
+    if (!hasAccess) {
+        return (
+            <DashboardLayout title="Video Feed">
+                <div className="access-denied-screen">
+                    <div className="access-denied-icon">🔒</div>
+                    <h2>Access Denied</h2>
+                    <p>You must be a Manager or HR representative to view live camera feeds.</p>
+                </div>
+            </DashboardLayout>
+        );
+    }
 
     return (
         <DashboardLayout title="Video Feed">
-            <div className="video-grid">
-                {feeds.map((id) => (
-                    <div key={id} className="video-card">
-                        <h3 className="video-title">Cafeteria camera</h3>
-                        <div className="video-player-placeholder">
-                            {/* Placeholder image acting as video feed */}
-                            <img
-                                src="/assets/images/camera.png"
-                                alt="Feed"
-                                style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.7 }}
-                            />
-                            <div className="video-controls-overlay">
-                                <button className="play-btn">❚❚</button>
-                                <div className="timeline-bar">
-                                    <div className="progress" style={{ width: '30%' }}></div>
-                                </div>
-                                <button className="volume-btn">🔊</button>
-                            </div>
-                        </div>
-                    </div>
-                ))}
-            </div>
+            {loading && (
+                <div className="camera-loading-container">
+                    <p>Loading cameras...</p>
+                </div>
+            )}
+
+            {error && (
+                <div className="camera-error-container">
+                    <p>Error: {error}</p>
+                </div>
+            )}
+
+            {!loading && !error && cameras.length === 0 && (
+                <div className="camera-empty-container">
+                    <p>No cameras registered yet. Please onboard cameras first.</p>
+                </div>
+            )}
+
+            {!loading && !error && cameras.length > 0 && (
+                <div className="camera-grid">
+                    {cameras.map((camera) => (
+                        <CameraCard key={camera.ip_address} camera={camera} />
+                    ))}
+                </div>
+            )}
         </DashboardLayout>
     );
 };

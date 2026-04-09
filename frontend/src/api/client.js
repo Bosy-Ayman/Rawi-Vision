@@ -85,4 +85,5 @@ async function apiClient(endpoint, options = {}) {
     return Promise.reject(data || { detail: 'An unexpected error occurred' });
 }
 
+export { BASE_URL };
 export default apiClient;

@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Query, WebSocket, WebSocketException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -69,3 +69,19 @@ async def require_manager(current_user: SystemUser = Depends(get_current_user)) 
             detail="Operation restricted to Managers."
         )
     return current_user
+
+async def require_manager_ws(websocket: WebSocket, token: str = Query(...)) -> dict:
+    """
+    Dependency for WebSockets. Validates the JWT from a query parameter.
+    Raises WebSocketException which cleanly closes the connection if unauthorized.
+    """
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        role = payload.get("role")
+        email = payload.get("email")
+        if not email or role not in ["Manager", "HR"]:
+            raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized role")
+        return payload
+    except JWTError:
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid or expired token")
+
