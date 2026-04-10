@@ -8,7 +8,9 @@ const Sidebar = () => {
     const isHRJourney =
         location.pathname === '/dashboard/employee-onboarding' ||
         location.pathname === '/dashboard/all-employees' ||
-        location.pathname.startsWith('/dashboard/employee/');
+        location.pathname.startsWith('/dashboard/employee/') ||
+        location.pathname === '/dashboard/camera-onboarding' ||
+        location.pathname === '/dashboard/all-cameras';
 
     // SuperAdmin Journey: system user management
     const isSuperAdminJourney = location.pathname === '/admin/system-users';
@@ -24,7 +26,9 @@ const Sidebar = () => {
 
     const hrMenuItems = [
         { name: 'Add Employee', icon: 'employee-insights.svg', path: '/dashboard/employee-onboarding' },
-        { name: 'All Employees', icon: 'employee-insights.svg', path: '/dashboard/all-employees' }
+        { name: 'All Employees', icon: 'employee-insights.svg', path: '/dashboard/all-employees' },
+        { name: 'Add Camera', icon: 'employee-insights.svg', path: '/dashboard/camera-onboarding' },
+        { name: 'All Cameras', icon: 'employee-insights.svg', path: '/dashboard/all-cameras' }
     ];
 
     const superAdminMenuItems = [

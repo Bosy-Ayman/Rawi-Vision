@@ -1,0 +1,166 @@
+.all-cameras-container {
+    padding: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+}
+
+.header-title {
+    font-size: 1.8rem;
+    color: #111827;
+    flex: 1;
+}
+
+.header-center {
+    flex: 2;
+    display: flex;
+    justify-content: center;
+}
+
+.header-right {
+    flex: 1;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.search-bar {
+    width: 100%;
+    max-width: 400px;
+}
+
+.search-bar input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 9999px;
+    background-color: #f9fafb;
+    outline: none;
+    transition: all 0.2s;
+}
+
+.search-bar input:focus {
+    border-color: #3b82f6;
+    background-color: white;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.btn-add-new {
+    background-color: #3b82f6;
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.btn-add-new:hover {
+    background-color: #2563eb;
+}
+
+.camera-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.5rem;
+}
+
+.camera-card {
+    background: white;
+    border-radius: 16px;
+    padding: 2rem 1.5rem;
+    border: 1px solid #e5e7eb;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.camera-card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    border-color: #3b82f6;
+}
+
+.card-image {
+    margin-bottom: 1.5rem;
+}
+
+.icon-placeholder {
+    width: 90px;
+    height: 90px;
+    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+    color: #3b82f6;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    font-weight: 700;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.card-info h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.25rem;
+    color: #111827;
+    font-weight: 600;
+}
+
+.location-badge {
+    display: inline-block;
+    background-color: #ebf5ff;
+    color: #1e40af;
+    padding: 0.35rem 1rem;
+    border-radius: 9999px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    margin-bottom: 0.75rem;
+}
+
+.mac-address {
+    font-size: 0.85rem;
+    color: #6b7280;
+    margin: 0.5rem 0;
+    font-family: monospace;
+}
+
+.btn-delete-camera {
+    margin-top: 1rem;
+    background-color: #fee2e2;
+    color: #ef4444;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    width: 100%;
+}
+
+.btn-delete-camera:hover {
+    background-color: #fecaca;
+}
+
+.btn-delete-camera:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.loading,
+.empty-state {
+    text-align: center;
+    padding: 3rem;
+    color: #6b7280;
+    background: white;
+    border-radius: 12px;
+}

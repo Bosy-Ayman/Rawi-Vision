@@ -2,6 +2,7 @@ from pydantic import BaseModel, ConfigDict
 from fastapi import UploadFile
 from uuid import UUID
 from datetime import datetime
+from typing import List
 
 class EmployeeBase(BaseModel):
     first_name: str
@@ -17,7 +18,7 @@ class EmployeeResponse(EmployeeBase):
     date_created: datetime
     embedding: list[float] | None = None
     embedding_status : str
-    images: list[str] | None = None
+    images: List[str] | None = None 
 
 class EmployeeUpdate(BaseModel):
     first_name: str | None = None
