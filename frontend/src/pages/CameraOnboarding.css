@@ -1,0 +1,119 @@
+.onboarding-container {
+    padding: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.onboarding-header {
+    margin-bottom: 2rem;
+    text-align: left;
+}
+
+.onboarding-header h2 {
+    font-size: 1.8rem;
+    color: #111827;
+    margin-bottom: 0.5rem;
+}
+
+.onboarding-header p {
+    color: #6b7280;
+    font-size: 1rem;
+}
+
+.camera-onboarding-card {
+    background: white;
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e5e7eb;
+}
+
+.details-form {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+}
+
+/* Make password and username span smartly if needed, or keep uniform */
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.form-group label {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #4b5563;
+}
+
+.form-group input {
+    padding: 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    outline: none;
+    transition: border-color 0.2s;
+    background: white;
+}
+
+.form-group input:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.onboarding-actions {
+    margin-top: 2rem;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.btn-submit {
+    background: #3b82f6;
+    color: white;
+    border: none;
+    padding: 0.75rem 2rem;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 4px 6px rgba(59, 130, 246, 0.3);
+}
+
+.btn-submit:hover {
+    background: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 8px rgba(59, 130, 246, 0.4);
+}
+
+.btn-submit:disabled {
+    background: #93c5fd;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.status-message {
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+    font-weight: 500;
+}
+
+.status-message.success {
+    background: #dcfce7;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+}
+
+.status-message.error {
+    background: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .details-form {
+        grid-template-columns: 1fr;
+    }
+}
