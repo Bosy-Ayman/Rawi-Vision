@@ -42,7 +42,7 @@ STAGE3_NUM_BEAMS= 1
 STAGE4_MODEL_ID  = 0
 # -------------------------- for testing ---------------------------------
 
-VIDEO_SOURCE  = "C:\\Users\\pouss\\Documents\\CSAI\\Rawi-Vision\\Anomaly Detection\\videos\\assault_video (small).mp4" 
+VIDEO_SOURCE  = "videos/assault_video (small).mp4"  
 VIDEO_WINDOW  = 16
 FRAME_SIZE    = (224, 224)
 INFER_EVERY_N = 16

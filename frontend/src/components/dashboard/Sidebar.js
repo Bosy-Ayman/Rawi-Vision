@@ -1,8 +1,23 @@
 import React from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { authAPI } from '../../api/auth';
 
 const Sidebar = () => {
     const location = useLocation();
+    const navigate = useNavigate();
+
+    const handleLogout = async (e) => {
+        e.preventDefault();
+        try {
+            await authAPI.logout();
+        } catch (err) {
+            console.error('Logout failed:', err);
+        }
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('user_role');
+        localStorage.removeItem('full_name');
+        navigate('/');
+    };
 
     // HR Journey: employee management pages
     const isHRJourney =
@@ -64,14 +79,14 @@ const Sidebar = () => {
             </nav>
 
             <div className="sidebar-footer">
-                <NavLink to="/" className="sidebar-link sign-out">
+                <a href="/" onClick={handleLogout} className="sidebar-link sign-out">
                     <img
                         src="/assets/icons/sidebar/sign-out.svg"
                         alt="Sign Out"
                         className="sidebar-icon"
                     />
                     <span className="sidebar-text">Sign Out</span>
-                </NavLink>
+                </a>
             </div>
         </aside>
     );

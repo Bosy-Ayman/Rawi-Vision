@@ -14,7 +14,7 @@ class Employee(Base):
     first_name: Mapped[str] = mapped_column(nullable=False)
     last_name: Mapped[str] = mapped_column(nullable=False)
     role: Mapped[str] = mapped_column(nullable=False) #should be changed later to enum or something, in order to choose between predefined roles
-    embedding: Mapped[list[float] | None] = mapped_column(ARRAY(Float), nullable=True) # bosy told me each embedding should be 512 d
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(512), nullable=True) # bosy told me each embedding should be 512 d
     embedding_status: Mapped[str] = mapped_column(nullable=False)
     date_created : Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

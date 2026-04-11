@@ -1,4 +1,7 @@
-from sqlalchemy import create_engine
+import os
+import socket
+from dotenv import load_dotenv
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from typing import Annotated
 from fastapi import Depends
@@ -8,14 +11,22 @@ from config import Config
 
 URL_DATABASE = Config.DATABASE_URL 
 engine = create_async_engine(URL_DATABASE)
-sessionlocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# Fix: Register pgvector with asyncpg so it knows how to decode vector columns!
+@event.listens_for(engine.sync_engine, 'connect')
+def receive_connect(dbapi_connection, connection_record):
+    dbapi_connection.run_async(register_vector)
+
+# Fix: expire_on_commit=False prevents SQLAlchemy from throwing "MissingGreenlet" 
+# when accessing an object's attributes (like new_employee.id) after a commit!
+sessionlocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine, expire_on_commit=False)
 
 class Base(DeclarativeBase):
     pass 
 
 async def get_db():
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all) # suitable only for development, MUST be replaced later with alembic for production and CI/CD pipelines
+        await conn.run_sync(Base.metadata.create_all) 
     db = sessionlocal()
     try:
         yield db
