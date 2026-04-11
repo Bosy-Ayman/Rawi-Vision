@@ -5,23 +5,12 @@ import cv2
 import subprocess
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from config import Config
 
 class NonOnvifOnboarding(OnboardingInterface):
     def __init__(self):
         self.camera_ips=[]
-        self.RTSP_PATHS = [
-            "/Streaming/Channels/101",
-            "/Streaming/Channels/102",
-            "/Streaming/Channels/201",
-            "/Streaming/Channels/301",
-            "/Streaming/Channels/401",
-            "/h264/ch1/main/av_stream",
-            "/h264/ch1/sub/av_stream",
-            "/live",
-            "/live.sdp",
-            "/stream1",
-            "/stream2",
-            "/cam/realmonitor?channel=1&subtype=0"]
+        self.RTSP_PATHS = Config.RTSP_URLS
     
     def _try_rtsp_urls(self, ip, username, password, path):
         url = f"rtsp://{username}:{password}@{ip}:554/{path}"

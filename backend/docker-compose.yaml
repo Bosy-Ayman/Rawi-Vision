@@ -11,6 +11,8 @@ x-minio-common: &minio-common
     retries: 3
   env_file:
     - .env
+  environment:
+    - MINIO_SERVER_URL=http://localhost:9000
 
 services:
   minio1: 

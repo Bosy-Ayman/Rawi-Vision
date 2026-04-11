@@ -1,4 +1,4 @@
-from ..ai.fusion import run_pipeline
+from ...ai.fusion import run_pipeline
 from celery import Celery
 import asyncio
 from utils.celery_client import celery_app

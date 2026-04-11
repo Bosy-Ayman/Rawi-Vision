@@ -5,9 +5,9 @@ from employee_onboarding.utils.minio_client import minio_client_init
 from employee_onboarding.utils.minio_storage_client import MinioStorageClient
 import asyncio
 import os
-from ..utils.video_upload import VideoUploadFile
+from ...utils.video_upload import VideoUploadFile
 from celery.result import AsyncResult
-from ..utils.redis import redis_client
+from ...utils.redis import redis_client
 from utils.celery_client import celery_app
 
 

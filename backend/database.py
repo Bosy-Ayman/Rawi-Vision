@@ -4,9 +4,9 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
+from config import Config
 
-# the username:password@localhost:5432/databaseName
-URL_DATABASE = 'postgresql+asyncpg://shahd:password@localhost:5433/rawivision_db' 
+URL_DATABASE = Config.DATABASE_URL 
 engine = create_async_engine(URL_DATABASE)
 sessionlocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

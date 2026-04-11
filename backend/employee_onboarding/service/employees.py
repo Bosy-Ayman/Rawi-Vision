@@ -6,7 +6,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from minio.error import S3Error
 import uuid
 from ..exceptions import EmployeeNotFound
-from ..celery_tasks.embedding import create_embedding_task
+from ..celery_tasks.embedding.tasks import create_embedding_task
 from .employee_images import EmployeeImagesService
 from ..schemas.employee import EmployeeResponse
 import asyncio

@@ -81,10 +81,10 @@ def run_pipeline(
     yolo_face = YOLO(str(weights_dir / "yolov12m-face.pt")).to(device)
     yolo_person = YOLO(str(weights_dir / "yolov8n.pt")).to(device)
     tracker     = StrongSort(
-        reid_weights=Path("weights/osnet_x0_25_msmt17.pt"),
-        device=device,
-        half=device == "cuda:0",
-    )
+            reid_weights=weights_dir / "osnet_x0_25_msmt17.pt",
+            device=device,
+            half=device == "cuda:0",
+        )
     resnet = InceptionResnetV1(pretrained="vggface2").to(device).eval()
     with torch.no_grad():
         resnet(torch.zeros(1, 3, 160, 160).to(device))

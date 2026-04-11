@@ -5,24 +5,13 @@ from urllib.parse import urlparse
 from .onboarding_interface import OnboardingInterface
 import cv2
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from config import Config  
 
 class OnvifOnboarding(OnboardingInterface):
     def __init__(self):
         self.camera_ips = []
-        self.RTSP_PATHS = [
-            "/Streaming/Channels/101",
-            "/Streaming/Channels/102",
-            "/Streaming/Channels/201",
-            "/Streaming/Channels/301",
-            "/Streaming/Channels/401",
-            "/h264/ch1/main/av_stream",
-            "/h264/ch1/sub/av_stream",
-            "/live",
-            "/live.sdp",
-            "/stream1",
-            "/stream2",
-            "/cam/realmonitor?channel=1&subtype=0"]
-
+        self.RTSP_PATHS = Config.RTSP_URLS
+        
     def is_camera(self, types):
         if 'networkvideotransmitter' in str(types).lower(): # i think i need to add more strings, not sure tho
             return True
