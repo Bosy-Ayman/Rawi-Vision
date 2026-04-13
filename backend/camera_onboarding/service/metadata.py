@@ -1,4 +1,4 @@
-from ..repository.camera_metdata import CameraMetadataRepository
+from ..repository.camera_metadata import CameraMetadataRepository
 from ..schemas.metadata import CameraMetadataCreate, CameraMetadataResponse
 from ..utils.exceptions import CameraNotFound
 

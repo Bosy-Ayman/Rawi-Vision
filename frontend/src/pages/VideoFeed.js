@@ -66,7 +66,7 @@ const VideoFeedPage = () => {
             {!loading && !error && cameras.length > 0 && (
                 <div className="camera-grid">
                     {cameras.map((camera) => (
-                        <CameraCard key={camera.ip_address} camera={camera} />
+                        <CameraCard key={camera.mac_address} camera={camera} />
                     ))}
                 </div>
             )}

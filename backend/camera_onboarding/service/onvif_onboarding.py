@@ -82,4 +82,3 @@ class OnvifOnboarding(OnboardingInterface):
                 results = executor.map(check_path, self.RTSP_PATHS)
                 urls = [url for url in results if url]
             return urls
-

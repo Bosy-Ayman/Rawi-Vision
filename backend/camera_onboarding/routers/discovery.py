@@ -4,7 +4,7 @@ from ..service.metadata import CameraMetadataService
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 from ..repository.cameras import CameraRepository
-from ..repository.camera_metdata import CameraMetadataRepository
+from ..repository.camera_metadata import CameraMetadataRepository
 from ..schemas.metadata import CameraMetadataResponse
 from typing import List
 

@@ -33,7 +33,7 @@ def get_mac(ip):
     except Exception as e:
         print(e)
 
-ip = "192.168.1.5"
+ip = "192.168.1.7"
 mac = get_mac(ip)
 
 print("MAC Address:", mac)
