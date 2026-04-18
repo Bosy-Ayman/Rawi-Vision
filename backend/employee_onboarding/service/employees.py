@@ -10,6 +10,9 @@ from ..celery_tasks.embedding.tasks import create_embedding_task
 from .employee_images import EmployeeImagesService
 from ..schemas.employee import EmployeeResponse
 import asyncio
+import numpy as np
+from pgvector.sqlalchemy import Vector
+from pgvector import vector
 
 class EmployeeService:
     def __init__ (self, repository: EmployeeRepository, object_storage:MinioStorageClient, employee_image_service: EmployeeImagesService): # constructor dependency injection
@@ -73,7 +76,11 @@ class EmployeeService:
                 raise EmployeeNotFound(f"employee with {id} not found")
             update_data = updated_employee_info.model_dump(exclude_unset=True)
             for field, value in update_data.items():
-                setattr(employee, field, value)
+                if field == "embedding" and value is not None:
+                    setattr(employee, field, vector.Vector(value))
+                else:
+                    setattr(employee, field, value)
+            print("BEFORE COMMIT:", type(employee.embedding), str(employee.embedding)[:60])
             await self.repository.db.commit()
             await self.repository.db.refresh(employee)
             return employee

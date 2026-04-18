@@ -13,11 +13,6 @@ from pgvector.asyncpg import register_vector
 URL_DATABASE = Config.DATABASE_URL 
 engine = create_async_engine(URL_DATABASE)
 
-# Fix: Register pgvector with asyncpg so it knows how to decode vector columns!
-@event.listens_for(engine.sync_engine, 'connect')
-def receive_connect(dbapi_connection, connection_record):
-    dbapi_connection.run_async(register_vector)
-
 # Fix: expire_on_commit=False prevents SQLAlchemy from throwing "MissingGreenlet" 
 # when accessing an object's attributes (like new_employee.id) after a commit!
 sessionlocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine, expire_on_commit=False)

@@ -75,6 +75,7 @@ class AutomaticDiscovery():
                     await self.metadata_service.delete_camera_metadata_by_ip(ip_address=ip) 
                     continue
             [mac_address, rtsp_urls] = await self.discover_mac_address_and_rtsp_url(ip_address=ip)
+            print("rtsp_urls: ", rtsp_urls)
             if mac_address is None or rtsp_urls is None:  
                 continue
             existing = await self.metadata_service.get_camera_metadata_by_mac_address(mac_address=mac_address)

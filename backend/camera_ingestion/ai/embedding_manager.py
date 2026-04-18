@@ -32,6 +32,8 @@ class EmbeddingManager:
             if not embedding:
                 print(f"Skipping {full_name}: empty embedding")
                 continue
+            if isinstance(embedding, str):
+                embedding = json.loads(embedding)
             vector = np.array(embedding, dtype='float32')
             if vector.size == 0:
                 print(f"Skipping {full_name}: empty vector")

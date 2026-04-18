@@ -33,7 +33,6 @@ async def get_employee_service(repo: EmployeeRepository = Depends(get_employee_r
 @employee_router.get("", response_model=list[EmployeeResponse])
 async def get_all_employees(
     service: EmployeeService = Depends(get_employee_service),
-    current_user: SystemUser = Depends(require_manager)
 ):
     try: 
         employees = await service.get_all_employees()  
@@ -49,7 +48,6 @@ async def create_employee(
     role: str = Form(...), 
     employee_pictures: list[Annotated[UploadFile, File()]] = File(...), 
     service: EmployeeService = Depends(get_employee_service),
-    current_user: SystemUser = Depends(require_hr)
 ):
     try: 
         employee = EmployeeCreate(first_name=first_name, last_name= last_name, role= role)
@@ -63,7 +61,6 @@ async def create_employee(
 async def get_employee_by_id(
     id: uuid.UUID, 
     service: EmployeeService = Depends(get_employee_service),
-    current_user: SystemUser = Depends(require_manager)
 ):
     try:
         employee = await service.get_employee_by_id(id)
@@ -77,9 +74,10 @@ async def update_employee_partially(
     id: uuid.UUID, 
     employee_new_data: EmployeeUpdate, 
     service: EmployeeService = Depends(get_employee_service),
-    current_user: SystemUser = Depends(require_hr)
 ):
     try:
+        print("INCOMING TYPE:", type(employee_new_data.embedding))  
+        print("INCOMING VALUE:", employee_new_data.embedding[:3])
         updated_employee = await service.update_employee(id, updated_employee_info=employee_new_data)
         return updated_employee
     except EmployeeNotFound as e:
@@ -90,7 +88,6 @@ async def update_employee_partially(
 async def delete_employee_by_id(
     id: uuid.UUID, 
     service: EmployeeService = Depends(get_employee_service),
-    current_user: SystemUser = Depends(require_hr)
 ):
     try: 
         await service.delete_employee(id=id)

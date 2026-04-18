@@ -53,7 +53,17 @@ def create_embedding_task(bucket_name, employee_id: str): #generates the embeddi
         object_storage = MinioStorageClient()
         images_bytes = object_storage.get_objects_binary(bucket_name=bucket_name, prefix=f"{employee_id}")
         embedding = generate_embedding(images_bytes)
-        new_employee = {"embedding":embedding.tolist(), "embedding_status": "done"} # embedding is changed into a list to make the json object serializable 
+        if embedding is not None:
+            embedding = embedding.astype(float)  
+            embedding_list = [float(x) for x in embedding]  
+        else:
+            embedding_list = None
+        new_employee = {
+            "embedding": embedding_list,
+            "embedding_status": "done" if embedding_list else "failed"
+        }
+        print(type(new_employee["embedding"]))
+        print(type(new_employee["embedding"][0]))
         with httpx.Client() as client:
             response = client.patch(f"{BASE_URL}/employee/{employee_id}",json=new_employee,headers={"Authorization": "Bearer sherlockholmes"})  # this is for secure internal calls
         return response.status_code
