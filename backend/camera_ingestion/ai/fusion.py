@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 import torch
 from ultralytics import YOLO
-from boxmot import StrongSort
+from boxmot import StrongSort # find the version of the library tha has this, do not replace this library name please (bosy,abdelrahman)
 from facenet_pytorch import InceptionResnetV1
 from .embedding_manager import EmbeddingManager
 

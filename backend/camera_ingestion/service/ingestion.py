@@ -1,4 +1,5 @@
 from camera_onboarding.service.metadata import CameraMetadataService
+from camera_onboarding.service.automatic_discovery import AutomaticDiscovery
 from ..celery_tasks.ingestion.tasks import capture_rtsp_video
 import redis
 import json
@@ -8,12 +9,15 @@ from ..celery_tasks.face_recognition.tasks import run_face_recognition_logic
 from config import Config
 
 class IngestionService:
-    def __init__(self, service: CameraMetadataService):
-        self.service = service
+    def __init__(self, metadata_service: CameraMetadataService, discovery_service: AutomaticDiscovery):
+        self.metadata_service = metadata_service
+        self.discovery_service = discovery_service
         self.db_config =  Config.DB_CONFIG
     
     async def get_online_cameras(self):
-        cameras = await self.service.get_all_camera_metadata() # calling this instead of the sync function beacuse this one takes less time for running
+        cameras = await self.metadata_service.get_all_camera_metadata() # calling this instead of the sync function beacuse this one takes less time for running
+        if not cameras:
+            cameras = await self.discovery_service.sync_camera_metadata()
         return cameras
 
     async def start_ingestion(self, duration=120):
