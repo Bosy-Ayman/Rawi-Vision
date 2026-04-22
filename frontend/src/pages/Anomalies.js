@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
 import { anomalyAPI } from '../api/anomalies';
+import ToastNotification from '../components/modals/ToastNotification';
 
 const WS_URL = 'ws://127.0.0.1:8000/anomalies/ws/live';
 
@@ -117,39 +118,13 @@ const Anomalies = () => {
         <DashboardLayout title="Anomalies">
             {/* Live Anomaly Notification Toast */}
             {notification && (
-                <div style={{
-                    position: 'fixed',
-                    top: '20px',
-                    right: '20px',
-                    backgroundColor: '#fff1f2',
-                    borderLeft: '4px solid #ef4444',
-                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
-                    padding: '16px',
-                    borderRadius: '8px',
-                    zIndex: 9999,
-                    width: '320px',
-                    animation: 'slideIn 0.3s ease-out',
-                }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <strong style={{ color: '#be123c', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ fontSize: '20px' }}>🚨</span> Anomaly Detected
-                        </strong>
-                        <button
-                            onClick={() => setNotification(null)}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: '#9ca3af' }}
-                        >
-                            ✕
-                        </button>
-                    </div>
-                    <div style={{ marginTop: '12px' }}>
-                        <p style={{ color: '#111827', fontWeight: '600', textTransform: 'uppercase', fontSize: '14px', margin: 0 }}>
-                            {notification.anomaly_type}
-                        </p>
-                        <p style={{ color: '#4b5563', fontSize: '13px', margin: '4px 0 0 0' }}>
-                            {notification.description || 'Unknown event detected.'}
-                        </p>
-                    </div>
-                </div>
+                <ToastNotification 
+                    type="error"
+                    title="Anomaly Detected"
+                    subtitle={notification.anomaly_type}
+                    message={notification.description || 'Unknown event detected.'}
+                    onClose={() => setNotification(null)}
+                />
             )}
             <div className="anomalies-container">
                 {loading && <p style={{ color: '#9ca3af' }}>Loading anomalies...</p>}

@@ -30,7 +30,8 @@ const CameraCard = ({ camera }) => {
             return;
         }
 
-        const ws = new WebSocket(`${WS_BASE}/${camera.ip_address}?token=${token}`);
+        const cameraIdentifier = camera.ip_address || camera.mac_address;
+        const ws = new WebSocket(`${WS_BASE}/${cameraIdentifier}?token=${token}`);
         wsRef.current = ws;
 
         ws.onopen = () => {
@@ -85,7 +86,7 @@ const CameraCard = ({ camera }) => {
                 wsRef.current.close();
             }
         };
-    }, [camera.ip_address]);
+    }, [camera.ip_address, camera.mac_address]);
 
     const handlePauseToggle = () => setIsPaused(prev => !prev);
 

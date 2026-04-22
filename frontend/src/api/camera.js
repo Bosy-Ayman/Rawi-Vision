@@ -9,6 +9,13 @@ export const cameraAPI = {
         });
     },
 
+    // Discover online cameras
+    discoverCameras: async () => {
+        return await apiClient('/camera_discovery/discovery', {
+            method: 'GET'
+        });
+    },
+
     // Create a new camera
     createCamera: async (formData) => {
         // formData is passed directly. fetch automatically sets multipart/form-data.
