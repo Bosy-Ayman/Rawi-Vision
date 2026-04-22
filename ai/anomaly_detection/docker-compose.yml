@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  anomaly-detection:
+    build: .
+    container_name: anomaly-detection
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+    environment:
+      - PYTHONUNBUFFERED=1
