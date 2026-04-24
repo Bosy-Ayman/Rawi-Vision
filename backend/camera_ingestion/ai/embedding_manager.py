@@ -24,10 +24,10 @@ class EmbeddingManager:
         conn = psycopg2.connect(**self.db_config)
         cursor = conn.cursor()
 
-        cursor.execute("SELECT first_name, last_name, embedding FROM employees")
+        cursor.execute("SELECT id, first_name, last_name, embedding FROM employees")
         rows = cursor.fetchall()
 
-        for idx, (first_name, last_name, embedding) in enumerate(rows):
+        for idx, (emp_id, first_name, last_name, embedding) in enumerate(rows):
             full_name = f"{first_name} {last_name}"
             if not embedding:
                 print(f"Skipping {full_name}: empty embedding")
@@ -45,8 +45,8 @@ class EmbeddingManager:
                 continue
 
             self.index.add(vector)
-            self.names_map[idx] = full_name
-            print(f"Loaded: {full_name} (ID: {idx})")
+            self.names_map[idx] = {"id": str(emp_id), "name": full_name}  # store both
+            print(f"Loaded: {full_name} (ID: {emp_id})")
 
         cursor.close()
         conn.close()
@@ -61,4 +61,5 @@ class EmbeddingManager:
         dist = distances[0][0]
         if idx == -1:
             return "Unknown", dist
-        return self.names_map.get(idx, "Unknown"), dist
+        result = self.names_map.get(idx, {})
+        return result.get("id"), result.get("name", "Unknown"), dist

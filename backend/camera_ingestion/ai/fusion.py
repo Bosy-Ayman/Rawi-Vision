@@ -12,7 +12,8 @@ from ultralytics import YOLO
 from boxmot import StrongSort # find the version of the library tha has this, do not replace this library name please (bosy,abdelrahman)
 from facenet_pytorch import InceptionResnetV1
 from .embedding_manager import EmbeddingManager
-
+from celery import current_app
+from kombu import Producer, Exchange
 
 THRESHOLD = 1.0
 FACE_RETRY_FRAMES = 10
@@ -21,6 +22,7 @@ PERSON_SKIP = 2
 LOG_FILE = "events.csv"
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
+exchange = Exchange('attendance', type='topic', durable=True)
 
 
 # ── Logger ───────────────────────────────────────────────────────────────────
@@ -121,14 +123,18 @@ def run_pipeline(
                         face_tensor = preprocess_face(face).to(device)
                         with torch.no_grad():
                             emb = resnet(face_tensor).cpu().numpy().squeeze()
-                        name, dist = manager.search_face(emb)
+                        emp_id, name, dist = recognizer.search_face(embedding)
                         if dist < threshold and name != "Unknown":
                             with identity_lock:
                                 previous = identity_map.get(track_id)
                                 identity_map[track_id] = name
                             if previous != name:
+                                with current_app.pool.acquire(block=True) as conn:
+                                    producer = Producer(conn, exchange=exchange)
+                                    producer.publish({'emp_id': emp_id }, routing_key="attendance.detected")
                                 logger.log("FACE_IDENTIFIED", track_id=track_id,
                                            name=name, distance=dist)
+                                
                         else:
                             logger.log("FACE_UNKNOWN", track_id=track_id,
                                        distance=dist,

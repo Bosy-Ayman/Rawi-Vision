@@ -10,6 +10,7 @@ class StreamService:
         await websocket.accept()
         camera_metadata = await self.camera_metadata_service.get_camera_metadata_by_ip(ip=camera_ip)
         rtsp_urls = camera_metadata.rtsp_urls
+        cap=None
         for url in rtsp_urls:
             cap = cv2.VideoCapture(url)
             if cap.isOpened():
