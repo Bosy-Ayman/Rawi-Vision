@@ -16,7 +16,7 @@ from celery import current_app
 from kombu import Producer, Exchange
 
 THRESHOLD = 1.0
-FACE_RETRY_FRAMES = 10
+FACE_RETRY_FRAMES = 5   # FIX: lowered from 10 to retry faces more often at low FPS
 PERSON_SKIP = 2
 
 LOG_FILE = "events.csv"
@@ -100,6 +100,9 @@ def run_pipeline(
     identity_map = {}          # track_id -> name
     identity_lock = threading.Lock()
 
+    # ── Sentinel for graceful worker shutdown ────────────────────────────────
+    _STOP = object()
+
     # ── Helpers ──────────────────────────────────────────────────────────────
     def preprocess_face(face_img):
         face_img = cv2.resize(face_img, (160, 160))
@@ -111,9 +114,16 @@ def run_pipeline(
     def face_worker():
         while True:
             try:
-                track_id, crop = face_queue.get(timeout=1)
+                item = face_queue.get(timeout=1)
             except queue.Empty:
                 continue
+
+            # FIX: graceful shutdown via sentinel
+            if item is _STOP:
+                face_queue.task_done()
+                break
+
+            track_id, crop = item
             try:
                 results = yolo_face(crop, verbose=False, conf=0.6)
                 if len(results[0].boxes) > 0:
@@ -122,8 +132,9 @@ def run_pipeline(
                     if face.size > 0:
                         face_tensor = preprocess_face(face).to(device)
                         with torch.no_grad():
-                            emb = resnet(face_tensor).cpu().numpy().squeeze()
-                        emp_id, name, dist = recognizer.search_face(embedding)
+                            emb = resnet(face_tensor).cpu().numpy().squeeze()  # FIX: was named `emb` but `embedding` was used below
+                        # FIX: was `recognizer.search_face(embedding)` — object is `manager`, variable is `emb`
+                        emp_id, name, dist = manager.search_face(emb)
                         if dist < threshold and name != "Unknown":
                             with identity_lock:
                                 previous = identity_map.get(track_id)
@@ -131,10 +142,9 @@ def run_pipeline(
                             if previous != name:
                                 with current_app.pool.acquire(block=True) as conn:
                                     producer = Producer(conn, exchange=exchange)
-                                    producer.publish({'emp_id': emp_id }, routing_key="attendance.detected")
+                                    producer.publish({'emp_id': emp_id}, routing_key="attendance.detected")
                                 logger.log("FACE_IDENTIFIED", track_id=track_id,
                                            name=name, distance=dist)
-                                
                         else:
                             logger.log("FACE_UNKNOWN", track_id=track_id,
                                        distance=dist,
@@ -145,7 +155,8 @@ def run_pipeline(
                 logger.log("FACE_ERROR", track_id=track_id, detail=str(e))
             face_queue.task_done()
 
-    threading.Thread(target=face_worker, daemon=True).start()
+    worker_thread = threading.Thread(target=face_worker, daemon=True)
+    worker_thread.start()
 
     # ── Camera ────────────────────────────────────────────────────────────────
     class ThreadedCamera:
@@ -266,6 +277,12 @@ def run_pipeline(
     except KeyboardInterrupt:
         logger.log("INTERRUPTED_BY_USER")
     finally:
+        # FIX: send sentinel to gracefully stop the face worker before exit
+        try:
+            face_queue.put_nowait(_STOP)
+            worker_thread.join(timeout=3)
+        except Exception:
+            pass
         cam.stop()
         logger.log("PIPELINE_STOPPED",
                    detail=f"total_frames={frame_idx} log={log_file}")
