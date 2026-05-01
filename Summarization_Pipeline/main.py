@@ -70,7 +70,7 @@ def main():
 
         print(f"\nDONE Camera {cam_id}\n")
 
-    print("\n All Cameras are Finished\n")
+    print("\n All Cameras are done\n")
 
 
 if __name__ == "__main__":
