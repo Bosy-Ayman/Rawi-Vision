@@ -75,20 +75,20 @@ const VideoFeedPage = () => {
         try {
             const data = await discoveryAPI.discoverCameras();
             setCameras(data || []);
-            
-            setNotification({ 
-                type: 'success', 
-                title: 'Discovery Complete', 
-                message: 'Online cameras and RTSP streams synced successfully.' 
+
+            setNotification({
+                type: 'success',
+                title: 'Discovery Complete',
+                message: 'Online cameras and RTSP streams synced successfully.'
             });
-            
+
             setTimeout(() => setNotification(null), 5000);
         } catch (err) {
             console.error("Discovery error:", err);
-            setNotification({ 
-                type: 'error', 
-                title: 'Discovery Failed', 
-                message: 'Could not connect to the discovery service.' 
+            setNotification({
+                type: 'error',
+                title: 'Discovery Failed',
+                message: 'Could not connect to the discovery service.'
             });
             setTimeout(() => setNotification(null), 5000);
         } finally {
@@ -111,7 +111,7 @@ const VideoFeedPage = () => {
     return (
         <DashboardLayout title="Video Feed">
             {notification && (
-                <ToastNotification 
+                <ToastNotification
                     type={notification.type}
                     title={notification.title}
                     message={notification.message}
@@ -160,12 +160,12 @@ const VideoFeedPage = () => {
                         <button
                             onClick={handleDiscover}
                             disabled={isDiscovering}
-                            style={{ 
-                                padding: '8px 16px', 
-                                backgroundColor: '#3498db', 
-                                color: 'white', 
-                                border: 'none', 
-                                borderRadius: '4px', 
+                            style={{
+                                padding: '8px 16px',
+                                backgroundColor: '#3498db',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
                                 cursor: isDiscovering ? 'not-allowed' : 'pointer',
                                 opacity: isDiscovering ? 0.7 : 1
                             }}
