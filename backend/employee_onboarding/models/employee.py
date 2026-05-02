@@ -3,7 +3,9 @@ from sqlalchemy.dialects.postgresql import UUID
 from pgvector.sqlalchemy import Vector 
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
-from sqlalchemy import DateTime, ARRAY, Float
+from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy import Float
+from sqlalchemy.types import DateTime
 from datetime import datetime
 from database import Base
 

@@ -16,7 +16,7 @@ from celery import current_app
 from kombu import Producer, Exchange
 
 THRESHOLD = 1.0
-FACE_RETRY_FRAMES = 5   # FIX: lowered from 10 to retry faces more often at low FPS
+FACE_RETRY_FRAMES = 30          # FIX: was 10 — too aggressive, flooded the queue
 PERSON_SKIP = 2
 
 LOG_FILE = "events.csv"
@@ -105,6 +105,8 @@ def run_pipeline(
 
     # ── Helpers ──────────────────────────────────────────────────────────────
     def preprocess_face(face_img):
+        # FIX: input is now BGR (from the raw frame crop), convert to RGB for FaceNet
+        face_img = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
         face_img = cv2.resize(face_img, (160, 160))
         face_img = face_img.astype(np.float32) / 255.0
         face_img = (face_img - 0.5) / 0.5
@@ -125,16 +127,18 @@ def run_pipeline(
 
             track_id, crop = item
             try:
-                results = yolo_face(crop, verbose=False, conf=0.6)
+                # FIX: crop is now BGR (correct for YOLO), lowered conf 0.6 -> 0.3
+                results = yolo_face(crop, verbose=False, conf=0.3)
                 if len(results[0].boxes) > 0:
                     x1, y1, x2, y2 = map(int, results[0].boxes.xyxy[0])
                     face = crop[y1:y2, x1:x2]
                     if face.size > 0:
+                        # preprocess_face now handles BGR->RGB conversion internally
                         face_tensor = preprocess_face(face).to(device)
                         with torch.no_grad():
-                            emb = resnet(face_tensor).cpu().numpy().squeeze()  # FIX: was named `emb` but `embedding` was used below
-                        # FIX: was `recognizer.search_face(embedding)` — object is `manager`, variable is `emb`
+                            emb = resnet(face_tensor).cpu().numpy().squeeze()
                         emp_id, name, dist = manager.search_face(emb)
+                        logger.log(f"employee id{emp_id}")
                         if dist < threshold and name != "Unknown":
                             with identity_lock:
                                 previous = identity_map.get(track_id)
@@ -142,13 +146,13 @@ def run_pipeline(
                             if previous != name:
                                 with current_app.pool.acquire(block=True) as conn:
                                     producer = Producer(conn, exchange=exchange)
-                                    producer.publish({'emp_id': emp_id}, routing_key="attendance.detected")
-                                logger.log("FACE_IDENTIFIED", track_id=track_id,
-                                           name=name, distance=dist)
+                                    producer.publish({'emp_id': emp_id}, routing_key="attendance.detected", serializer='json', content_type='application/json',)
+                                logger.log("FACE_IDENTIFIED", track_id=track_id, name=name, distance=dist)
                         else:
-                            logger.log("FACE_UNKNOWN", track_id=track_id,
-                                       distance=dist,
-                                       detail=f"best_match={name}")
+                            with current_app.pool.acquire(block=True) as conn:
+                                    producer = Producer(conn, exchange=exchange)
+                                    producer.publish({'emp_id': emp_id}, routing_key="attendance.detected", serializer='json', content_type='application/json',)
+                            logger.log("FACE_UNKNOWN", track_id=track_id, distance=dist, detail=f"best_match={name}")
                 else:
                     logger.log("FACE_NOT_DETECTED", track_id=track_id)
             except Exception as e:
@@ -212,6 +216,7 @@ def run_pipeline(
             frame_idx   += 1
             fps_counter += 1
             frame = cv2.flip(frame, 1)
+            # FIX: keep rgb only for the tracker; all crops now taken from BGR frame
             rgb   = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
             # Person detection (every N frames)
@@ -233,6 +238,10 @@ def run_pipeline(
                     x1, y1 = max(0, x1), max(0, y1)
                     x2, y2 = min(w, x2), min(h, y2)
 
+                    # FIX: skip person crops that are too small for reliable face detection
+                    if (x2 - x1) < 40 or (y2 - y1) < 80:
+                        continue
+
                     current_ids.add(track_id)
                     track_ages[track_id] = track_ages.get(track_id, 0) + 1
 
@@ -250,13 +259,15 @@ def run_pipeline(
                         and track_ages[track_id] > 3
                         and (frame_idx - last) >= face_retry_frames
                     ):
-                        crop = rgb[y1:y2, x1:x2]
+                        # FIX: crop from BGR frame (not rgb) so YOLO gets correct color format
+                        crop = frame[y1:y2, x1:x2]
                         if crop.size > 0:
                             try:
                                 face_queue.put_nowait((track_id, crop.copy()))
                                 track_last_face[track_id] = frame_idx
                             except queue.Full:
-                                pass
+                                # FIX: log queue-full events to help diagnose back-pressure
+                                logger.log("QUEUE_FULL", track_id=track_id)
 
             # Log tracks that have disappeared
             gone = active_tracks - current_ids

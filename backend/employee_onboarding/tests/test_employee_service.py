@@ -16,7 +16,7 @@ async def test_create_employee_success(mocker):
     mock_repo.create_employee.return_value = fake_employee
     mock_storage = AsyncMock()
     mock_image_service = AsyncMock()
-    mock_delay = mocker.patch("employee_onboarding.celery_tasks.embedding.create_embedding_task.delay")
+    mock_delay = mocker.patch("employee_onboarding.celery_tasks.embedding.tasks.create_embedding_task.delay")
     service = EmployeeService(repository=mock_repo,object_storage=mock_storage,employee_image_service=mock_image_service)
     fake_file = MagicMock(spec=UploadFile)
     fake_file.filename = "photo.jpg"
