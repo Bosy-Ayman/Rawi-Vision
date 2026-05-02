@@ -36,6 +36,8 @@ class CameraMetadataRepository:
         try:
             result = await self.db.execute(select(CameraMetadata).where(CameraMetadata.ip_address == ip))
             camera = result.scalars().one_or_none()
+            if camera:
+                await self.db.refresh(camera)
             return camera
         except Exception as error:
             raise error 

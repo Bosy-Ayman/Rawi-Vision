@@ -12,7 +12,7 @@ const AllCameras = () => {
     const [isDeleting, setIsDeleting] = useState(false);
     const [isDiscovering, setIsDiscovering] = useState(false);
     const [notification, setNotification] = useState(null);
-    
+
     const navigate = useNavigate();
 
     const fetchCameras = async () => {
@@ -47,14 +47,14 @@ const AllCameras = () => {
 
     const handleDelete = async (id) => {
         if (!window.confirm("Are you sure you want to delete this camera?")) return;
-        
-        setIsDeleting(true); 
+
+        setIsDeleting(true);
         try {
             await cameraAPI.deleteCamera(id);
             setCameras(cameras.filter(cam => cam.id !== id));
         } catch (err) {
             console.error("Failed to delete camera:", err);
-            alert('Error connecting to server to delete camera'); 
+            alert('Error connecting to server to delete camera');
         } finally {
             setIsDeleting(false);
         }
@@ -69,7 +69,7 @@ const AllCameras = () => {
     return (
         <DashboardLayout title="Camera Directory">
             {notification && (
-                <ToastNotification 
+                <ToastNotification
                     type={notification.type}
                     title={notification.title}
                     message={notification.message}
@@ -90,14 +90,6 @@ const AllCameras = () => {
                         </div>
                     </div>
                     <div className="header-right">
-                        <button 
-                            className="btn-add-new" 
-                            onClick={handleDiscover}
-                            disabled={isDiscovering}
-                            style={{ marginRight: '10px', backgroundColor: '#3498db' }}
-                        >
-                            {isDiscovering ? 'Discovering...' : 'Sync / Discover'}
-                        </button>
                         <button className="btn-add-new" onClick={() => navigate('/dashboard/camera-onboarding')}>
                             + Add Camera
                         </button>
@@ -121,9 +113,9 @@ const AllCameras = () => {
                                         <p className="location-badge">{cam.building}</p>
                                         <p className="mac-address">MAC: {cam.mac_address}</p>
                                     </div>
-                                    
-                                    <button 
-                                        className="btn-delete-camera" 
+
+                                    <button
+                                        className="btn-delete-camera"
                                         onClick={(e) => { e.stopPropagation(); handleDelete(cam.id); }}
                                         disabled={isDeleting}
                                     >

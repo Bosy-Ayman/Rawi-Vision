@@ -10,6 +10,7 @@ import EmployeeOnboarding from './pages/EmployeeOnboarding';
 import AllEmployees from './pages/AllEmployees';
 import EmployeeDetails from './pages/EmployeeDetails';
 import SystemUserManagement from './pages/SystemUserManagement';
+import Settings from './pages/Settings';
 import CustomCursor from './components/CustomCursor';
 
 import CameraOnboarding from './pages/CameraOnboarding';
@@ -33,11 +34,12 @@ function App() {
           <Route path="/dashboard/employee-onboarding" element={<EmployeeOnboarding />} />
           <Route path="/dashboard/all-employees" element={<AllEmployees />} />
           <Route path="/dashboard/employee/:id" element={<EmployeeDetails />} />
-          
+
           <Route path="/dashboard/camera-onboarding" element={<CameraOnboarding />} />
           <Route path="/dashboard/all-cameras" element={<AllCameras />} />
 
           <Route path="/admin/system-users" element={<SystemUserManagement />} />
+          <Route path="/dashboard/settings" element={<Settings />} />
 
           {/* Fallback for demo purposes */}
           <Route path="/dashboard/*" element={<VideoFeedPage />} />

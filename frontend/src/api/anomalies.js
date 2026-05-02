@@ -11,4 +11,12 @@ export const anomalyAPI = {
     getAnomalyById: async (id) => {
         return await apiClient(`/anomalies/${id}`);
     },
+
+    startAnomaly: async () => {
+        return await apiClient('/anomalies/start');
+    },
+
+    stopAnomaly: async () => {
+        return await apiClient('/anomalies/stop');
+    },
 };

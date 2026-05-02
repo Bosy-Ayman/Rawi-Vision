@@ -3,8 +3,11 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 from sqlalchemy import DateTime
-from database import Base
+from sqlalchemy.orm import DeclarativeBase
 from datetime import datetime
+
+class Base(DeclarativeBase):
+    pass
 
 class Camera(Base):
     __tablename__ = "cameras"
