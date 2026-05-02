@@ -11,6 +11,10 @@ from datetime import datetime
 
 from ..repository.anomaly import AnomalyRepository
 from ..schemas.anomaly import AnomalyCreate, AnomalyTypeEnum
+from camera_onboarding.service.metadata import CameraMetadataService
+from camera_ingestion.utils.redis import redis_client
+from ..celery_tasks.tasks import run_anomaly_detection
+from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +27,10 @@ connected_clients: List[WebSocket] = []
 
 
 class AnomalyService:
-    def __init__(self, repository: AnomalyRepository, minio_client: Minio):
+    def __init__(self, repository: AnomalyRepository, minio_client: Minio, metadata_service: CameraMetadataService = None):
         self.repository = repository
         self.minio = minio_client
+        self.metadata_service = metadata_service
 
     async def handle_ai_event(self, event_payload: dict) -> None:
         """
@@ -82,6 +87,48 @@ class AnomalyService:
                 dead_clients.append(ws)
         for ws in dead_clients:
             connected_clients.remove(ws)
+
+    async def start_anomaly_detection(self):
+        """
+        Triggers the anomaly detection Celery task for all online cameras.
+        """
+        if not self.metadata_service:
+            raise RuntimeError("Metadata service not initialized in AnomalyService")
+            
+        cameras = await self.metadata_service.get_all_camera_metadata()
+        if not cameras:
+            return {"status": "error", "message": "No cameras found"}
+            
+        task_ids = []
+        for camera in cameras:
+            if not camera.rtsp_urls:
+                continue
+                
+            task_id = str(uuid4())
+            # We use the first working RTSP URL
+            rtsp_url = camera.rtsp_urls[0]
+            
+            # Trigger Celery Task
+            run_anomaly_detection.delay(rtsp_url, camera.mac_address, task_id)
+            task_ids.append(task_id)
+            
+        # Store task IDs in Redis so we can stop them later
+        redis_client.set('anomaly_task_ids', json.dumps(task_ids))
+        return {"status": "started", "count": len(task_ids)}
+
+    def stop_anomaly_detection(self):
+        """
+        Sends a stop signal to all running anomaly detection tasks via Redis.
+        """
+        task_ids_json = redis_client.get("anomaly_task_ids")
+        if not task_ids_json:
+            return {"status": "error", "message": "No active tasks found"}
+            
+        task_ids = json.loads(task_ids_json)
+        for task_id in task_ids:
+            redis_client.set(f"stop_anomaly:{task_id}", 1)
+            
+        return {"status": "stopped", "count": len(task_ids)}
 
     def _ensure_bucket_exists(self):
         try:

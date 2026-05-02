@@ -13,6 +13,8 @@ from auth.service.auth import JWT_SECRET, JWT_ALGORITHM
 from ..repository.anomaly import AnomalyRepository
 from ..service.anomaly import AnomalyService, connected_clients
 from ..schemas.anomaly import AnomalyResponse
+from camera_onboarding.service.metadata import CameraMetadataService
+from camera_onboarding.repository.camera_metdata import CameraMetadataRepository
 
 anomaly_router = APIRouter(prefix="/anomalies", tags=["anomalies"])
 
@@ -30,10 +32,16 @@ def get_minio_client() -> Minio:
     )
 
 
-async def get_anomaly_service(db: AsyncSession = Depends(get_db)) -> AnomalyService:
+async def get_metadata_repository(db: AsyncSession=Depends(get_db)):
+    return CameraMetadataRepository(db=db)
+
+async def get_metadata_service(repo: CameraMetadataRepository=Depends(get_metadata_repository)):
+    return CameraMetadataService(repository=repo)
+
+async def get_anomaly_service(db: AsyncSession = Depends(get_db), metadata_service: CameraMetadataService = Depends(get_metadata_service)) -> AnomalyService:
     repo = AnomalyRepository(db)
     minio = get_minio_client()
-    return AnomalyService(repository=repo, minio_client=minio)
+    return AnomalyService(repository=repo, minio_client=minio, metadata_service=metadata_service)
 
 
 @anomaly_router.get("/", response_model=list[AnomalyResponse])
@@ -43,6 +51,24 @@ async def list_anomalies(
 ):
     """Returns the 50 most recent anomalies. Requires Manager or HR role."""
     return await service.repository.fetch_anomalies()
+
+
+@anomaly_router.get("/start", status_code=status.HTTP_200_OK)
+async def start_anomaly_detection(
+    service: AnomalyService = Depends(get_anomaly_service),
+    current_user: SystemUser = Depends(require_manager),
+):
+    """Starts the anomaly detection pipeline for all online cameras."""
+    return await service.start_anomaly_detection()
+
+
+@anomaly_router.get("/stop", status_code=status.HTTP_200_OK)
+async def stop_anomaly_detection(
+    service: AnomalyService = Depends(get_anomaly_service),
+    current_user: SystemUser = Depends(require_manager),
+):
+    """Stops the anomaly detection pipeline."""
+    return service.stop_anomaly_detection()
 
 
 @anomaly_router.get("/{anomaly_id}", response_model=AnomalyResponse)

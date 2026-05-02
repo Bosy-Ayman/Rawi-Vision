@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
 import { cameraAPI as ingestionAPI } from '../api/cameras';
 import { cameraAPI as discoveryAPI } from '../api/camera';
+import { anomalyAPI } from '../api/anomalies';
 import CameraCard from '../components/camera/CameraCard';
 import ToastNotification from '../components/modals/ToastNotification';
 import './VideoFeed.css';
@@ -12,7 +13,9 @@ const VideoFeedPage = () => {
     const [error, setError] = useState(null);
     const [hasAccess, setHasAccess] = useState(true);
     const [ingestionStatus, setIngestionStatus] = useState('Idle');
+    const [anomalyStatus, setAnomalyStatus] = useState('Idle');
     const [isActionLoading, setIsActionLoading] = useState(false);
+    const [isAnomalyLoading, setIsAnomalyLoading] = useState(false);
     const [notification, setNotification] = useState(null);
 
     useEffect(() => {
@@ -39,13 +42,7 @@ const VideoFeedPage = () => {
     const handleStartIngestion = async () => {
         setIsActionLoading(true);
         try {
-            // 1. First get the latest IPs via discovery (The "Sync" that works)
-            const discoveredData = await discoveryAPI.discoverCameras();
-            if (discoveredData && discoveredData.length > 0) {
-                setCameras(discoveredData);
-            }
-
-            // 2. Now start the pipeline
+            // Trigger the pipeline directly using cameras already in the database
             await ingestionAPI.startIngestion();
             setIngestionStatus('Running');
         } catch (err) {
@@ -66,6 +63,54 @@ const VideoFeedPage = () => {
             alert("Failed to stop ingestion");
         } finally {
             setIsActionLoading(false);
+        }
+    };
+
+    const handleStartAnomaly = async () => {
+        setIsAnomalyLoading(true);
+        try {
+            await anomalyAPI.startAnomaly();
+            setAnomalyStatus('Analyzing');
+            setNotification({
+                type: 'success',
+                title: 'AI Started',
+                message: 'Anomaly detection models are now running in the background.'
+            });
+            setTimeout(() => setNotification(null), 5000);
+        } catch (err) {
+            console.error("Start anomaly failed", err);
+            setNotification({
+                type: 'error',
+                title: 'AI Failed',
+                message: 'Failed to start anomaly detection.'
+            });
+            setTimeout(() => setNotification(null), 5000);
+        } finally {
+            setIsAnomalyLoading(false);
+        }
+    };
+
+    const handleStopAnomaly = async () => {
+        setIsAnomalyLoading(true);
+        try {
+            await anomalyAPI.stopAnomaly();
+            setAnomalyStatus('Stopped');
+            setNotification({
+                type: 'info',
+                title: 'AI Stopped',
+                message: 'Anomaly detection models have been turned off.'
+            });
+            setTimeout(() => setNotification(null), 5000);
+        } catch (err) {
+            console.error("Stop anomaly failed", err);
+            setNotification({
+                type: 'error',
+                title: 'AI Stop Failed',
+                message: 'Failed to stop anomaly detection.'
+            });
+            setTimeout(() => setNotification(null), 5000);
+        } finally {
+            setIsAnomalyLoading(false);
         }
     };
 
@@ -127,6 +172,24 @@ const VideoFeedPage = () => {
                             style={{ padding: '8px 16px', backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '4px', cursor: (isActionLoading || ingestionStatus === 'Stopped') ? 'not-allowed' : 'pointer', opacity: (isActionLoading || ingestionStatus === 'Stopped') ? 0.6 : 1 }}
                         >
                             Stop Pipeline
+                        </button>
+
+                        <div className="vertical-divider" style={{ width: '1px', height: '30px', backgroundColor: '#e1e8ed', margin: '0 10px' }}></div>
+
+                        <span style={{ color: '#2c3e50', marginRight: '10px', fontWeight: '500' }}>AI Anomaly Detection: <strong style={{ color: '#9b59b6' }}>{anomalyStatus}</strong></span>
+                        <button
+                            onClick={handleStartAnomaly}
+                            disabled={isAnomalyLoading || anomalyStatus === 'Analyzing'}
+                            style={{ padding: '8px 16px', backgroundColor: '#8e44ad', color: 'white', border: 'none', borderRadius: '4px', cursor: (isAnomalyLoading || anomalyStatus === 'Analyzing') ? 'not-allowed' : 'pointer', opacity: (isAnomalyLoading || anomalyStatus === 'Analyzing') ? 0.6 : 1 }}
+                        >
+                            Start AI
+                        </button>
+                        <button
+                            onClick={handleStopAnomaly}
+                            disabled={isAnomalyLoading || anomalyStatus === 'Stopped'}
+                            style={{ padding: '8px 16px', backgroundColor: '#c0392b', color: 'white', border: 'none', borderRadius: '4px', cursor: (isAnomalyLoading || anomalyStatus === 'Stopped') ? 'not-allowed' : 'pointer', opacity: (isAnomalyLoading || anomalyStatus === 'Stopped') ? 0.6 : 1 }}
+                        >
+                            Stop AI
                         </button>
 
                         <div className="vertical-divider" style={{ width: '1px', height: '30px', backgroundColor: '#e1e8ed', margin: '0 10px' }}></div>
