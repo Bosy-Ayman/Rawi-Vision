@@ -8,9 +8,14 @@ class StreamService:
     
     async def stream(self, websocket: WebSocket, camera_ip):
         await websocket.accept()
+        # The frontend often passes the MAC address instead of the IP address in the URL parameter.
+        # Try finding the metadata by IP first, then by MAC address.
         camera_metadata = await self.camera_metadata_service.get_camera_metadata_by_ip(ip=camera_ip)
         if camera_metadata is None:
-            await websocket.send_text(f"No camera found with IP: {camera_ip}")
+            camera_metadata = await self.camera_metadata_service.get_camera_metadata_by_mac_address(mac_address=camera_ip)
+            
+        if camera_metadata is None:
+            await websocket.send_text(f"No camera found with IP or MAC: {camera_ip}")
             await websocket.close()
             return
         rtsp_urls = camera_metadata.rtsp_urls

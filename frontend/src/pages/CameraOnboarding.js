@@ -8,6 +8,7 @@ const CameraOnboarding = () => {
         room: '',
         building: '',
         mac_address: '',
+        ip_address: '',
         username: '',
         password: ''
     });
@@ -24,7 +25,7 @@ const CameraOnboarding = () => {
         setSubmitStatus(null);
         setErrorMessage('');
 
-        if (!camera.room || !camera.building || !camera.mac_address || !camera.username || !camera.password) {
+        if (!camera.room || !camera.building || !camera.mac_address || !camera.ip_address || !camera.username || !camera.password) {
             setSubmitStatus('error');
             setErrorMessage('All fields are required.');
             return;
@@ -37,13 +38,14 @@ const CameraOnboarding = () => {
             formData.append('room', camera.room);
             formData.append('building', camera.building);
             formData.append('mac_address', camera.mac_address);
+            formData.append('ip_address', camera.ip_address);
             formData.append('username', camera.username);
             formData.append('password', camera.password);
 
             await cameraAPI.createCamera(formData);
             
             setSubmitStatus('success');
-            setCamera({ room: '', building: '', mac_address: '', username: '', password: '' }); // Reset form
+            setCamera({ room: '', building: '', mac_address: '', ip_address: '', username: '', password: '' }); // Reset form
             setTimeout(() => setSubmitStatus(null), 3000);
         } catch (error) {
             console.error("Submission error:", error);
@@ -101,6 +103,15 @@ const CameraOnboarding = () => {
                                 value={camera.mac_address}
                                 onChange={(e) => handleChange('mac_address', e.target.value)}
                                 placeholder="e.g. 00:1A:2B:3C:4D:5E"
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label>IP Address</label>
+                            <input
+                                type="text"
+                                value={camera.ip_address}
+                                onChange={(e) => handleChange('ip_address', e.target.value)}
+                                placeholder="e.g. 192.168.1.19"
                             />
                         </div>
                         <div className="form-group">
