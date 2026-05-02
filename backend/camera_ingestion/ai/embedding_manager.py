@@ -1,0 +1,60 @@
+import psycopg2
+import numpy as np
+import faiss
+import json
+import os 
+
+class EmbeddingManager:
+    def __init__(self, db_config, dim=512):
+        self.db_config = {
+            "host": os.getenv("DB_HOST"),
+            "port": int(os.getenv("DB_PORT", 5432)),
+            "dbname": os.getenv("DB_NAME"),
+            "user": os.getenv("DB_USER"),
+            "password": os.getenv("DB_PASSWORD"),
+        }
+        self.dim = dim
+        self.index = faiss.IndexFlatL2(self.dim)
+        self.names_map = {}
+
+    def load_db_into_memory(self):
+        self.index.reset()
+        self.names_map = {}
+        conn = psycopg2.connect(**self.db_config)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, first_name, last_name, embedding FROM employees")
+        rows = cursor.fetchall()
+        for idx, (emp_id, first_name, last_name, embedding) in enumerate(rows):
+            full_name = f"{first_name} {last_name}"
+            if not embedding:
+                print(f"Skipping {full_name}: empty embedding")
+                continue
+            if isinstance(embedding, str):
+                embedding = json.loads(embedding)
+            vector = np.array(embedding, dtype='float32')
+            if vector.size == 0:
+                print(f"Skipping {full_name}: empty vector")
+                continue
+            if vector.ndim == 1:
+                vector = vector.reshape(1, -1)
+            if vector.shape[1] != self.dim:
+                print(f"Skipping {full_name}: wrong dimension {vector.shape[1]}")
+                continue
+            self.index.add(vector)
+            self.names_map[idx] = {"id": emp_id, "name": full_name}
+            print(f"Loaded: {full_name} (ID: {idx})")
+        cursor.close()
+        conn.close()
+        print(f"--> Database Ready: {self.index.ntotal} vectors loaded.")
+
+    def search_face(self, embedding_vector):
+        vector_to_search = np.array([embedding_vector]).astype('float32')
+        if self.index.ntotal == 0:
+            return "Unknown", 99.9
+        distances, indices = self.index.search(vector_to_search, k=1)
+        idx = indices[0][0]
+        dist = distances[0][0]
+        if idx == -1:
+            return "Unknown", dist
+        result = self.names_map.get(idx, {})
+        return result.get("id"), result.get("name", "Unknown"), dist
