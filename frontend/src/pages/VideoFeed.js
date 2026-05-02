@@ -13,7 +13,6 @@ const VideoFeedPage = () => {
     const [hasAccess, setHasAccess] = useState(true);
     const [ingestionStatus, setIngestionStatus] = useState('Idle');
     const [isActionLoading, setIsActionLoading] = useState(false);
-    const [isDiscovering, setIsDiscovering] = useState(false);
     const [notification, setNotification] = useState(null);
 
     useEffect(() => {
@@ -70,31 +69,6 @@ const VideoFeedPage = () => {
         }
     };
 
-    const handleDiscover = async () => {
-        setIsDiscovering(true);
-        try {
-            const data = await discoveryAPI.discoverCameras();
-            setCameras(data || []);
-
-            setNotification({
-                type: 'success',
-                title: 'Discovery Complete',
-                message: 'Online cameras and RTSP streams synced successfully.'
-            });
-
-            setTimeout(() => setNotification(null), 5000);
-        } catch (err) {
-            console.error("Discovery error:", err);
-            setNotification({
-                type: 'error',
-                title: 'Discovery Failed',
-                message: 'Could not connect to the discovery service.'
-            });
-            setTimeout(() => setNotification(null), 5000);
-        } finally {
-            setIsDiscovering(false);
-        }
-    };
 
     if (!hasAccess) {
         return (
@@ -157,21 +131,6 @@ const VideoFeedPage = () => {
 
                         <div className="vertical-divider" style={{ width: '1px', height: '30px', backgroundColor: '#e1e8ed', margin: '0 10px' }}></div>
 
-                        <button
-                            onClick={handleDiscover}
-                            disabled={isDiscovering}
-                            style={{
-                                padding: '8px 16px',
-                                backgroundColor: '#3498db',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '4px',
-                                cursor: isDiscovering ? 'not-allowed' : 'pointer',
-                                opacity: isDiscovering ? 0.7 : 1
-                            }}
-                        >
-                            {isDiscovering ? 'Discovering...' : 'Sync / Discover'}
-                        </button>
                     </div>
                     <div className="camera-grid">
                         {cameras.map((camera) => (
