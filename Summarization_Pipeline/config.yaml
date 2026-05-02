@@ -4,18 +4,63 @@ config:
   allowed_classes: ["person", "car", "truck", "bus"]
   output_path: "results"
 
+  frame_skip: 5        
+  scene_segment_sec: 30   
+  max_frames_per_cam: 5000 
+
+  # Motion Filter 
+  motion_threshold: 25  
+  motion_min_area: 800    
+  adaptive_motion: true   
+
+  # Video Output 
+  video_codec: "mp4v"
+  video_crf: 23         
+
+  # Parallelism 
+  parallel_cameras: true 
+  max_workers: 4          
+
+  frame_read_timeout_sec: 10  
+  rtsp_retries: 3            
+  retry_delay_sec: 2
+
+  # YOLO 
+  model_path: "yolov8s.pt"
+  use_gpu: true         
+  batch_size: 16          
+
+  # for safety 
+  blur_faces: true    
+  log_detections: true  
+
 cameras:
   cam1:
-    name: Test Camera 1
+    name: "Indoor Camera"
+    location: "indoor"
     sources:
       - type: video
-        path: Videos/videoplayback.mp4 
+        path: Videos/videoplayback.mp4
+
 
   cam2:
-    name: Test Camera 2
+    name: "mall"
+    location: "mall"
     sources:
       - type: video
-        path: Videos/09172008flight1tape3_2.mpg
-
-
+        path: Videos/caviar_OneStopEnter1front.mp4
   
+  cam3:
+    name: "outdoor shop"
+    location: "outdoor shop"
+    sources:
+      - type: video
+        path: Videos/livevid_runover.mp4
+
+  # RTSP :
+  # cam3:
+  #   name: "Indoor Camera – RTSP"
+  #   location: "indoor"
+  #   sources:
+  #     - type: rtsp
+  #       path: 
