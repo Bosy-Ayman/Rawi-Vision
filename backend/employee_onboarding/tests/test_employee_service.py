@@ -6,7 +6,6 @@ import uuid
 from unittest.mock import MagicMock
 from employee_onboarding.exceptions import EmployeeNotFound
 
-
 @pytest.mark.asyncio
 async def test_create_employee_success(mocker):
     mock_repo = AsyncMock()

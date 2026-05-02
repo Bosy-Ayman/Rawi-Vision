@@ -4,10 +4,13 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import ARRAY
-from sqlalchemy import Float
+import sqlalchemy
 from sqlalchemy.types import DateTime
 from datetime import datetime
-from database import Base
+from sqlalchemy.orm import DeclarativeBase
+
+class Base(DeclarativeBase):
+    pass
 
 class Employee(Base):
     __tablename__ = "employees"
