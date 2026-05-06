@@ -1,0 +1,304 @@
+#!/usr/bin/env python3
+
+
+import json
+import sqlite3
+import argparse
+import time
+from pathlib import Path
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
+
+import cv2
+import numpy as np
+import torch
+from PIL import Image
+from transformers import AutoModelForVision2Seq, AutoProcessor
+from sentence_transformers import SentenceTransformer
+import faiss
+from ultralytics import YOLO
+
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+# --- Configurable models ---
+VLM_MODEL = "HuggingFaceTB/SmolVLM-Instruct"
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"   # 384-dim
+EMBEDDING_DIM = 384
+COMBINED_DIM = EMBEDDING_DIM * 3   # [objects, caption, motion]
+
+# ----------------------------------------------------------------------
+# Data structures
+# ----------------------------------------------------------------------
+
+@dataclass
+class Frame:
+    frame_id: int
+    timestamp: float
+    description: str
+
+# ----------------------------------------------------------------------
+# Database
+# ----------------------------------------------------------------------
+
+class VideoDB:
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self._init()
+
+    def _init(self):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS frames (
+                    frame_id INTEGER PRIMARY KEY,
+                    timestamp REAL,
+                    description TEXT
+                )
+            """)
+            conn.commit()
+
+    def save(self, frame_id: int, timestamp: float, description: str):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO frames VALUES (?, ?, ?)",
+                (frame_id, timestamp, description)
+            )
+            conn.commit()
+
+# ----------------------------------------------------------------------
+# FAISS Index (1152‑dim, inner product with L2‑normalized vectors)
+# ----------------------------------------------------------------------
+
+class FAISSIdx:
+    def __init__(self, faiss_path: str, map_path: str):
+        self.faiss_path = faiss_path
+        self.map_path = map_path
+        self.map: dict[int, int] = {}
+        self._load_or_create()
+
+    def _load_or_create(self):
+        if Path(self.faiss_path).exists():
+            print(f"[INFO] Loading existing FAISS index from {self.faiss_path}")
+            self.index = faiss.read_index(self.faiss_path)
+            if self.index.d != COMBINED_DIM:
+                raise ValueError("Existing FAISS index dimension mismatch")
+            with open(self.map_path) as f:
+                self.map = {int(k): v for k, v in json.load(f).items()}
+            print(f"[INFO] Loaded {len(self.map)} frame mappings")
+        else:
+            print(f"[INFO] Creating new FAISS index (dim={COMBINED_DIM})")
+            self.index = faiss.IndexFlatIP(COMBINED_DIM)
+
+    def add(self, frame_id: int, embedding: np.ndarray):
+        emb = embedding.astype(np.float32).reshape(1, -1)
+        self.index.add(emb)
+        self.map[len(self.map)] = frame_id
+
+    def save(self):
+        faiss.write_index(self.index, self.faiss_path)
+        with open(self.map_path, "w") as f:
+            json.dump(self.map, f)
+        print(f"[INFO] Saved FAISS index with {len(self.map)} frames")
+
+# ----------------------------------------------------------------------
+# Multimodal Frame Encoder (YOLO + VLM + Optical Flow)
+# ----------------------------------------------------------------------
+
+class FrameEncoder:
+    def __init__(self, use_vlm: bool = True):
+        print("[INFO] Loading embedding model...")
+        self.emb_model = SentenceTransformer(EMBEDDING_MODEL, device=DEVICE)
+
+        print("[INFO] Loading YOLO model...")
+        self.yolo_model = YOLO("yolov8n.pt")
+        if DEVICE == "cuda":
+            self.yolo_model = self.yolo_model.to(DEVICE)
+
+        self.vlm = None
+        self.vlm_proc = None
+        if use_vlm:
+            print("[INFO] Loading VLM (this may take a minute)...")
+            try:
+                self.vlm = AutoModelForVision2Seq.from_pretrained(
+                    VLM_MODEL,
+                    torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32,
+                    device_map="auto",
+                    trust_remote_code=True
+                )
+                self.vlm_proc = AutoProcessor.from_pretrained(VLM_MODEL)
+                print("[INFO] VLM loaded")
+            except Exception as e:
+                print(f"[WARN] Failed to load VLM: {e}")
+                self.vlm = None
+        print("[INFO] FrameEncoder ready")
+
+    def detect_objects(self, frame_bgr: np.ndarray) -> List[str]:
+        try:
+            results = self.yolo_model(frame_bgr, verbose=False)
+            objects = set()
+            for r in results:
+                for cls_id in r.boxes.cls:
+                    objects.add(self.yolo_model.names[int(cls_id)])
+            return sorted(objects)
+        except Exception as e:
+            print(f"[WARN] Object detection failed: {e}")
+            return []
+
+    def motion_vector(self, frame_bgr: np.ndarray,
+                      prev_frame_bgr: Optional[np.ndarray]) -> Tuple[float, Optional[float]]:
+        try:
+            if prev_frame_bgr is None:
+                return 0.0, None
+            gray1 = cv2.cvtColor(prev_frame_bgr, cv2.COLOR_BGR2GRAY)
+            gray2 = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+            flow = cv2.calcOpticalFlowFarneback(gray1, gray2, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+            mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
+            avg_mag = float(np.mean(mag))
+            hist, _ = np.histogram(ang, bins=16, range=(0, 2*np.pi))
+            dominant_bin = np.argmax(hist)
+            angle_deg = float(dominant_bin * (360/16))
+            return avg_mag, angle_deg
+        except Exception as e:
+            print(f"[WARN] Motion detection failed: {e}")
+            return 0.0, None
+
+    def motion_to_text(self, avg_mag: float, angle_deg: Optional[float]) -> str:
+        if avg_mag < 0.2:
+            return "static scene"
+        elif avg_mag < 1.0:
+            speed = "slow motion"
+        elif avg_mag < 3.0:
+            speed = "moderate motion"
+        else:
+            speed = "fast motion"
+
+        if angle_deg is not None:
+            dirs = ["rightward", "down-right", "downward", "down-left",
+                    "leftward", "up-left", "upward", "up-right"]
+            idx = int((angle_deg + 22.5) // 45) % 8
+            direction = dirs[idx]
+            return f"{speed} {direction}"
+        return speed
+
+    def describe_vlm(self, frame_rgb: np.ndarray, object_hint: str = "") -> str:
+        if self.vlm is None:
+            return self._fallback(frame_rgb)
+        try:
+            img = Image.fromarray(frame_rgb)
+            prompt = "Describe this image briefly, including actions and spatial relations."
+            if object_hint:
+                prompt += f" Detected objects: {object_hint}."
+            messages = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": prompt}]}]
+            prompt = self.vlm_proc.apply_chat_template(messages, add_generation_prompt=True)
+            inputs = self.vlm_proc(text=prompt, images=img, return_tensors="pt").to(DEVICE)
+            with torch.no_grad():
+                out = self.vlm.generate(**inputs, max_new_tokens=80, do_sample=False)
+            out = out[:, inputs["input_ids"].shape[1]:]
+            return self.vlm_proc.batch_decode(out, skip_special_tokens=True)[0].strip()
+        except Exception as e:
+            print(f"[WARN] VLM inference failed: {e}")
+            return self._fallback(frame_rgb)
+
+    def _fallback(self, frame_rgb: np.ndarray) -> str:
+        gray = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2GRAY)
+        brightness = np.mean(gray)
+        light = "bright" if brightness > 150 else "dim" if brightness < 100 else "normal"
+        edges = cv2.Canny(gray, 100, 200)
+        detail = "detailed" if np.sum(edges > 0) / edges.size > 0.05 else "simple"
+        return f"A {light}, {detail} scene."
+
+    def encode_frame(self, frame_bgr: np.ndarray,
+                     prev_frame_bgr: Optional[np.ndarray] = None) -> Tuple[np.ndarray, str]:
+        # Objects
+        objects = self.detect_objects(frame_bgr)
+        obj_text = "Objects: " + ", ".join(objects) if objects else "no objects"
+
+        # VLM caption
+        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        desc_text = self.describe_vlm(frame_rgb, obj_text)
+
+        # Motion
+        avg_mag, angle = self.motion_vector(frame_bgr, prev_frame_bgr)
+        motion_text = "Motion: " + self.motion_to_text(avg_mag, angle)
+
+        # Embed each textual component
+        emb_obj = self.emb_model.encode(obj_text, convert_to_numpy=True)
+        emb_desc = self.emb_model.encode(desc_text, convert_to_numpy=True)
+        emb_mot = self.emb_model.encode(motion_text, convert_to_numpy=True)
+
+        # Concatenate & normalize
+        combined = np.concatenate([emb_obj, emb_desc, emb_mot])
+        norm = np.linalg.norm(combined) + 1e-8
+        combined = combined / norm
+
+        full_desc = f"{desc_text} | {obj_text} | {motion_text}"
+        return combined.astype(np.float32), full_desc
+
+# ----------------------------------------------------------------------
+# Main indexing loop
+# ----------------------------------------------------------------------
+
+def index_video(source: str, sampling: int, db_path="video.db",
+                faiss_path="video.faiss", map_path="video.json"):
+    db = VideoDB(db_path)
+    faiss_idx = FAISSIdx(faiss_path, map_path)
+    encoder = FrameEncoder(use_vlm=True)
+
+    if source == "0":
+        cap = cv2.VideoCapture(0)
+    else:
+        if not Path(source).exists():
+            raise FileNotFoundError(f"Video file not found: {source}")
+        cap = cv2.VideoCapture(source)
+
+    if not cap.isOpened():
+        raise RuntimeError(f"Cannot open video: {source}")
+
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    print(f"[INFO] FPS: {fps:.1f} | Total frames: {total_frames} | Sampling every {sampling} frames")
+
+    indexed_frame = 0
+    sampled_count = 0
+    prev_frame = None
+    start = time.time()
+
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            indexed_frame += 1
+            if indexed_frame % sampling != 0:
+                prev_frame = frame
+                continue
+
+            sampled_count += 1
+            timestamp = (indexed_frame / fps) if fps > 0 else time.time() - start
+
+            t0 = time.time()
+            embedding, full_desc = encoder.encode_frame(frame, prev_frame)
+            elapsed = time.time() - t0
+
+            db.save(indexed_frame, timestamp, full_desc)
+            faiss_idx.add(indexed_frame, embedding)
+
+            print(f"[{sampled_count}] Frame {indexed_frame}/{total_frames} | {full_desc[:80]}... ({elapsed:.2f}s)")
+            prev_frame = frame
+
+    except KeyboardInterrupt:
+        print("[INFO] Interrupted by user")
+    finally:
+        cap.release()
+        faiss_idx.save()
+    print(f"\n[SUCCESS] Indexed {sampled_count} frames (from {indexed_frame} total)")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Offline video indexer")
+    parser.add_argument("source", help="Video file path or '0' for webcam")
+    parser.add_argument("--sampling", type=int, default=16, help="Sample every N-th frame")
+    parser.add_argument("--db", default="video.db")
+    parser.add_argument("--faiss", default="video.faiss")
+    parser.add_argument("--map", default="video.json")
+    args = parser.parse_args()
+
+    index_video(args.source, args.sampling, args.db, args.faiss, args.map)
