@@ -7,4 +7,3 @@ data/compose
 venv
 pgvector
 data/*
-.env
