@@ -50,7 +50,7 @@ class EmbeddingManager:
     def search_face(self, embedding_vector):
         vector_to_search = np.array([embedding_vector]).astype('float32')
         if self.index.ntotal == 0:
-            return "Unknown", 99.9
+           return None, "Unknown", 99.9  # Added None to match the 3-value format
         distances, indices = self.index.search(vector_to_search, k=1)
         idx = indices[0][0]
         dist = distances[0][0]
