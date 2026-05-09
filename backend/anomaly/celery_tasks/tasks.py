@@ -187,8 +187,7 @@ def run_anomaly_detection(rtsp_url: str, camera_mac: str, task_id: str):
                         
                         # Always publish the explanation to the dashboard
                         print(f"!!! SCENE EXPLANATION: {raw}")
-                        publish_incident_event(snap, anomaly_type, raw, s1_score, camera_mac)
-                            
+                        publish_incident_event(snap, anomaly_type, raw, s1_score, camera_mac)                
                         last_vlm_time = now
 
             time.sleep(0.01)
