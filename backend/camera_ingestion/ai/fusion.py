@@ -146,12 +146,12 @@ def run_pipeline(
                             if previous != name:
                                 with current_app.pool.acquire(block=True) as conn:
                                     producer = Producer(conn, exchange=exchange)
-                                    producer.publish({'emp_id': str(emp_id)}, routing_key="attendance.detected", serializer='json', content_type='application/json',)
+                                    producer.publish({'emp_id': str(emp_id)}, routing_key="attendance.detected", serializer='json')
                                 logger.log("FACE_IDENTIFIED", track_id=track_id, name=name, distance=dist)
                         else:
                             with current_app.pool.acquire(block=True) as conn:
                                     producer = Producer(conn, exchange=exchange)
-                                    producer.publish({'emp_id': str(emp_id)}, routing_key="attendance.detected", serializer='json', content_type='application/json',)
+                                    producer.publish({'emp_id': str(emp_id)}, routing_key="attendance.detected", serializer='json')
                             logger.log("FACE_UNKNOWN", track_id=track_id, distance=dist, detail=f"best_match={name}")
                 else:
                     logger.log("FACE_NOT_DETECTED", track_id=track_id)
