@@ -12,8 +12,11 @@ from ultralytics import YOLO
 from boxmot import StrongSort # find the version of the library tha has this, do not replace this library name please (bosy,abdelrahman)
 from facenet_pytorch import InceptionResnetV1
 from .embedding_manager import EmbeddingManager
-from celery import current_app
-from kombu import Producer, Exchange
+from kombu import Connection, Exchange, Producer
+from config import Config
+
+RABBITMQ_URL = Config.RABBITMQ_BROKER_URL
+attendance_exchange = Exchange('attendance', type='topic', durable=True)
 
 THRESHOLD = 1.0
 FACE_RETRY_FRAMES = 30          # FIX: was 10 — too aggressive, flooded the queue
@@ -24,7 +27,12 @@ LOG_FILE = "events.csv"
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 exchange = Exchange('attendance', type='topic', durable=True)
 
-
+# function responsible for publishing attendance when an employees face is recognized
+def publish_attendance(emp_id: str):
+    with Connection(RABBITMQ_URL) as conn:
+        with conn.channel() as channel:
+            producer = Producer(channel, exchange=attendance_exchange, routing_key='attendance.detected')
+            producer.publish({'emp_id': emp_id}, content_type='application/json')
 # ── Logger ───────────────────────────────────────────────────────────────────
 
 class EventLogger:
@@ -137,17 +145,15 @@ def run_pipeline(
                         face_tensor = preprocess_face(face).to(device)
                         with torch.no_grad():
                             emb = resnet(face_tensor).cpu().numpy().squeeze()
-                        emp_id, name, dist = manager.search_face(emb)
-                        logger.log(f"employee id{emp_id}")
+                        name, employee_id, dist = manager.search_face(emb)
                         if dist < threshold and name != "Unknown":
                             with identity_lock:
                                 previous = identity_map.get(track_id)
                                 identity_map[track_id] = name
                             if previous != name:
-                                with current_app.pool.acquire(block=True) as conn:
-                                    producer = Producer(conn, exchange=exchange)
-                                    producer.publish({'emp_id': str(emp_id)}, routing_key="attendance.detected", serializer='json')
-                                logger.log("FACE_IDENTIFIED", track_id=track_id, name=name, distance=dist)
+                                logger.log("FACE_IDENTIFIED", track_id=track_id,
+                                           name=name, distance=dist)
+                                publish_attendance(emp_id=str(employee_id)) #you are here
                         else:
                             with current_app.pool.acquire(block=True) as conn:
                                     producer = Producer(conn, exchange=exchange)
