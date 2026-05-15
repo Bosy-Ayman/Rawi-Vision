@@ -25,15 +25,21 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Startup: launches the Kafka consumer as a background task.
-    Shutdown: cancels it cleanly.
+    Startup: launches the Kafka consumer as a background task 
+             and the RabbitMQ attendance consumer as a background thread.
+    Shutdown: cancels them cleanly.
     """
     async for _ in get_db():
         break
 
+    import threading
+    from kombu import Connection
+    from attendance.service.kombu_consumer import AttendanceConsumer
+    from config import Config
     from anomaly.service.anomaly import AnomalyService
     from anomaly.repository.anomaly import AnomalyRepository
 
+    # ── Kafka / anomaly consumer ────────────────────────────────────────────
     async def start_kafka_consumer():
         async for db in get_db():
             repo = AnomalyRepository(db)
@@ -48,12 +54,35 @@ async def lifespan(app: FastAPI):
 
     consumer_task = asyncio.create_task(start_kafka_consumer())
     logger.info("Kafka consumer background task started.")
+
+    # ── RabbitMQ / attendance consumer ─────────────────────────────────────
+    main_loop = asyncio.get_running_loop()
+    def run_attendance_consumer(loop):
+        print("[Lifespan] Starting attendance consumer thread...")
+        try:
+            with Connection(Config.RABBITMQ_BROKER_URL) as conn:
+                print(f"[Lifespan] Connecting to broker: {Config.RABBITMQ_BROKER_URL}")
+                consumer = AttendanceConsumer(connection=conn)
+                # Pass the loop to the consumer so it can schedule tasks
+                consumer.loop = loop
+                print("[Lifespan] RabbitMQ attendance consumer is now running.")
+                consumer.run()
+        except Exception as exc:
+            print(f"[Lifespan] RabbitMQ attendance consumer crashed: {exc}")
+            logger.error(f"RabbitMQ attendance consumer crashed: {exc}")
+
+    attendance_thread = threading.Thread(target=run_attendance_consumer, args=(main_loop,), daemon=True, name="attendance-consumer")
+    attendance_thread.start()
+    print("[Lifespan] Attendance consumer thread has been spawned with main loop access.")
+
     yield
+    # ── Shutdown ────────────────────────────────────────────────────────────
     consumer_task.cancel()
     try:
         await consumer_task
     except asyncio.CancelledError:
         logger.info("Kafka consumer stopped.")
+    logger.info("Attendance consumer thread will stop on process exit.")
 
 
 app = FastAPI(lifespan=lifespan)

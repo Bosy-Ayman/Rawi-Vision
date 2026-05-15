@@ -33,13 +33,27 @@ class StreamService:
             raise RuntimeError(f"Could not open any RTSP stream from: {rtsp_urls}")
         try:
             while True:
+                # Check for disconnect signals from the client
+                try:
+                    # Optional: await asyncio.wait_for(websocket.receive_text(), timeout=0.01)
+                    # or just rely on the send failing if disconnected.
+                    pass
+                except asyncio.TimeoutError:
+                    pass
+
                 ret, frame = cap.read()
                 if not ret:
                     break
                 _, buf = cv2.imencode('.jpg', frame)
                 await websocket.send_bytes(buf.tobytes())
                 await asyncio.sleep(0.033)
+        except Exception as e:
+            print(f"Streaming error: {e}")
         finally:
-            cap.release()
-            await websocket.close()
+            if cap:
+                cap.release()
+            try:
+                await websocket.close()
+            except Exception:
+                pass # Already closed or failed to close
 
