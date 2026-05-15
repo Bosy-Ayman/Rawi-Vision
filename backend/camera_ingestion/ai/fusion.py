@@ -32,7 +32,7 @@ def publish_attendance(emp_id: str):
     with Connection(RABBITMQ_URL) as conn:
         with conn.channel() as channel:
             producer = Producer(channel, exchange=attendance_exchange, routing_key='attendance.detected')
-            producer.publish({'emp_id': emp_id}, content_type='application/json')
+            producer.publish({'emp_id': emp_id}, serializer='json')
 # ── Logger ───────────────────────────────────────────────────────────────────
 
 class EventLogger:
