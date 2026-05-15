@@ -155,9 +155,6 @@ def run_pipeline(
                                            name=name, distance=dist)
                                 publish_attendance(emp_id=str(employee_id)) #you are here
                         else:
-                            with current_app.pool.acquire(block=True) as conn:
-                                    producer = Producer(conn, exchange=exchange)
-                                    producer.publish({'emp_id': str(emp_id)}, routing_key="attendance.detected", serializer='json')
                             logger.log("FACE_UNKNOWN", track_id=track_id, distance=dist, detail=f"best_match={name}")
                 else:
                     logger.log("FACE_NOT_DETECTED", track_id=track_id)
