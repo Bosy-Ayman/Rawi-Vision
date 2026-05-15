@@ -32,3 +32,9 @@ class AttendanceRepository:
         result = await self.db.execute(select(Attendance).where(Attendance.employee_id == employee_id))
         attendance_records = result.scalars().all()
         return attendance_records
+    
+    async def delete_attendance_record(self, attendance_record:Attendance):
+        try:
+            await self.db.delete(attendance_record)
+        except Exception as error:
+            raise error

@@ -38,3 +38,10 @@ async def create_attendance_record(attendance_create: AttendanceCreate, service:
         return new_attendance_record
     except Exception as error:
         raise error
+
+@attendance_router.delete("/{employee_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_attendance_record_by_id(employee_id:UUID, service:AttendanceService= Depends(get_attendance_service)):
+    try:
+        await service.delete_attendance_record(employee_id=employee_id)
+    except Exception as error:
+        raise error

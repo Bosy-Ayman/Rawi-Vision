@@ -1,5 +1,7 @@
 from ..repository.attendance import AttendanceRepository
 from ..schemas.attendance import AttendanceCreate
+from ..utils.exceptions import AttendanceRecordNotFound
+from uuid import UUID
 
 class AttendanceService:
     def __init__(self, repository: AttendanceRepository):
@@ -26,4 +28,17 @@ class AttendanceService:
             attendance_records = await self.repo.read_attendance_record_by_employee_id(employee_id=employee_id)
             return attendance_records
         except Exception as error:
+            raise error
+    
+    async def delete_attendance_record(self, employee_id:UUID):
+        try:
+            attendance_records = await self.repo.read_attendance_record_by_employee_id(employee_id)
+            if not attendance_records:
+                raise AttendanceRecordNotFound
+            else:
+                for record in attendance_records:
+                    await self.repo.delete_attendance_record(record)
+            await self.repo.db.commit()
+        except Exception as error:
+            await self.repo.db.rollback()
             raise error
