@@ -19,12 +19,15 @@ class AttendanceConsumer(ConsumerMixin):
     def on_attendance_detected(self, body, message):
         try:
             emp_id = body.get("emp_id")
+            print(f"[CONSUMER] Received emp_id: {emp_id}")  
             if not emp_id:
                 message.reject(requeue=False)
                 return
             asyncio.run(self._handle(emp_id))
+            print(f"[CONSUMER] Successfully wrote attendance for {emp_id}")  
             message.ack()
         except Exception as error:
+            print(f"[CONSUMER] Error: {error}")  
             message.nack(requeue=False)
             raise error
 

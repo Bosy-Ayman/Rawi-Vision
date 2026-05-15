@@ -13,7 +13,7 @@ from anomaly.routers.anomaly import anomaly_router
 from camera_onboarding.routers.discovery import camera_discovery_router
 from camera_ingestion.routers.ingestion import ingestion_router
 from camera_ingestion.routers.stream import stream_router
-# from attendance.routers.attendance import attendance_router
+from attendance.routers.attendance import attendance_router
 
 from database import get_db
 from minio import Minio
@@ -28,6 +28,9 @@ async def lifespan(app: FastAPI):
     Startup: launches the Kafka consumer as a background task.
     Shutdown: cancels it cleanly.
     """
+    async for _ in get_db():
+        break
+
     from anomaly.service.anomaly import AnomalyService
     from anomaly.repository.anomaly import AnomalyRepository
 
@@ -71,4 +74,4 @@ app.include_router(camera_router)
 app.include_router(camera_discovery_router)
 app.include_router(ingestion_router)
 app.include_router(stream_router)
-# app.include_router(attendance_router)
+app.include_router(attendance_router)
