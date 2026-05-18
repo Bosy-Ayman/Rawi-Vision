@@ -12,6 +12,7 @@ import EmployeeDetails from './pages/EmployeeDetails';
 import SystemUserManagement from './pages/SystemUserManagement';
 import Settings from './pages/Settings';
 import CustomCursor from './components/CustomCursor';
+import DashboardMain from './pages/DashboardMain';
 
 import CameraOnboarding from './pages/CameraOnboarding';
 import AllCameras from './pages/AllCameras';
@@ -27,6 +28,7 @@ function App() {
 
         <Routes>
           <Route path="/" element={<LandingPage />} />
+          <Route path="/dashboard/main" element={<DashboardMain />} />
           <Route path="/dashboard/video-feed" element={<VideoFeedPage />} />
           <Route path="/dashboard/smart-search" element={<SmartSearch />} />
           <Route path="/dashboard/anomalies" element={<Anomalies />} />

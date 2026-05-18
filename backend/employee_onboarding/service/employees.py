@@ -27,6 +27,13 @@ class EmployeeService:
             for picture in employee_pictures:
                 await self.object_storage.add_object_to_bucket(picture, bucket_name= self.bucket_name, object_name=f"{new_employee.id}/{picture.filename}")
                 uploaded_files.append(picture)
+                
+                # Save the first uploaded picture as the profile_image_url
+                if not new_employee.profile_image_url:
+                    # Construct URL directly to Minio
+                    minio_endpoint = self.object_storage.minio_client._endpoint_link
+                    new_employee.profile_image_url = f"{minio_endpoint}/{self.bucket_name}/{new_employee.id}/{picture.filename}"
+
             await self.repository.db.commit()
             await self.repository.db.refresh(new_employee)
             # need to figure out a workaround if the celery task fails - using saga pattern 

@@ -14,3 +14,9 @@ class AttendanceResponse(AttendanceBase):
     id: UUID
     day: date | None
     date_created: datetime | None
+
+class AttendanceWithEmployeeResponse(AttendanceResponse):
+    first_name: str
+    last_name: str
+    role: str
+    profile_image_url: str | None = None
