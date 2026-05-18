@@ -47,4 +47,15 @@ class CameraMetadataService:
         except Exception as error:
             await self.repository.db.rollback()
             raise error
+ 
+    async def delete_camera_metadata_by_mac_address(self, mac_address: str):
+        try:
+            camera = await self.repository.get_camera_metadata_by_mac_address(mac_address=mac_address)
+            if not camera:
+                raise CameraNotFound
+            await self.repository.delete_camera(camera=camera)
+            await self.repository.db.commit()
+        except Exception as error:
+            await self.repository.db.rollback()
+            raise error
     
