@@ -4,8 +4,21 @@ import json
 import sqlite3
 import argparse
 import csv
+import os
 from datetime import datetime
 from pathlib import Path
+
+# Load environment variables from search/.env if it exists
+env_path = Path(__file__).resolve().parent.parent / ".env"
+if env_path.exists():
+    with open(env_path) as f:
+        for line in f:
+            if line.strip() and not line.startswith("#"):
+                try:
+                    key, val = line.strip().split("=", 1)
+                    os.environ[key.strip()] = val.strip().strip("'\"")
+                except ValueError:
+                    pass
 from dataclasses import dataclass, asdict
 from typing import List, Optional, Tuple
 
