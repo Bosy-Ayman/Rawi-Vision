@@ -42,6 +42,7 @@ class SearchResult:
     timestamp: float
     description: str
     similarity: float
+    clip_path: Optional[str] = None
 
 @dataclass
 class SearchResponse:
@@ -150,17 +151,35 @@ class LLMReasoner:
     def answer(self, query: str, contexts: List[str], max_new_tokens=256) -> str:
         # Use SmolLM2's chat template
         context_str = "\n".join([f"- {ctx}" for ctx in contexts[:5]])
-        messages = [
-            {"role": "system", "content": "You are an assistant that answers questions based on video frame descriptions. Use only the provided descriptions. Keep answers concise."},
-            {"role": "user", "content": f"Context (frame descriptions):\n{context_str}\n\nQuestion: {query}"}
-        ]
+        
+        # Detect if the query is a direct question or a descriptive search term
+        q_lower = query.strip().lower()
+        is_question = q_lower.endswith("?") or any(q_lower.startswith(w) for w in ["what", "who", "where", "when", "why", "how", "is", "are", "can", "do", "does", "did", "was", "were"])
+        
+        if is_question:
+            messages = [
+                {"role": "system", "content": "You are a strictly factual video intelligence assistant. Answer the Question based ONLY on the provided frame descriptions. Do not make up any facts."},
+                {"role": "user", "content": f"Context (video frame descriptions):\n{context_str}\n\nQuestion: {query}"}
+            ]
+        else:
+            messages = [
+                {"role": "system", "content": "You are a helpful and factual video intelligence assistant. Analyze and summarize the behavior of the matching people in the video frames."},
+                {"role": "user", "content": (
+                    f"Context (video frame descriptions):\n{context_str}\n\n"
+                    f"Query: {query}\n\n"
+                    f"Task:\n"
+                    f"1. Confirm if the item, color, person, or clothing in the Query is described in the Context.\n"
+                    f"2. If NO, output exactly: 'No match was found.'\n"
+                    f"3. If YES, write a 1-2 sentence detailed summary analyzing the behavior, appearance, clothing, and actions of the matching person/people (e.g. 'The person in the blue shirt is standing in the aisle looking at products on the shelves...')."
+                )}
+            ]
         prompt = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=2048)
         inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
         outputs = self.model.generate(
             **inputs,
             max_new_tokens=max_new_tokens,
-            do_sample=False,          # deterministic
+            do_sample=False,          # deterministic greedy decoding
             pad_token_id=self.tokenizer.pad_token_id
         )
         input_length = inputs["input_ids"].shape[1]
@@ -173,7 +192,7 @@ class LLMReasoner:
 
 class VideoSearchService:
     def __init__(self, db_path="video.db", faiss_path="video.faiss",
-                 map_path="video.json", use_llm=False, llm_model_name=None):
+                 map_path="video.json", use_llm=True, llm_model_name=None):
         self.db = VideoDB(db_path)
         self.faiss = FAISSIdx(faiss_path, map_path)
         self.encoder = QueryEncoder()
@@ -186,26 +205,151 @@ class VideoSearchService:
             except Exception as e:
                 print(f"[WARN] Failed to load LLM: {e}")
 
-    def search(self, query: str, top_k: int = 10, use_llm: bool = True) -> dict:
+    def extract_clip(self, video_path: str, timestamp: float, frame_id: int, 
+                     duration: float = 6.0, output_dir: str = "extracted_clips") -> Optional[str]:
+        try:
+            import cv2
+        except ImportError:
+            print("[WARN] OpenCV (cv2) not available. Cannot extract video clips.")
+            return None
+
+        video_p = Path(video_path)
+        if not video_p.exists():
+            print(f"[WARN] Original video not found at {video_path}, skipping clip extraction.")
+            return None
+
+        out_path = Path(output_dir)
+        out_path.mkdir(parents=True, exist_ok=True)
+        
+        cap = cv2.VideoCapture(str(video_p))
+        if not cap.isOpened():
+            print(f"[WARN] Cannot open video for clip extraction: {video_path}")
+            return None
+
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+        if fps <= 0:
+            fps = 30.0
+
+        half_dur = duration / 2.0
+        start_time = max(0.0, timestamp - half_dur)
+        end_time = min(total_frames / fps, timestamp + half_dur)
+
+        start_frame = int(start_time * fps)
+        end_frame = int(end_time * fps)
+
+        output_file = out_path / f"clip_frame_{frame_id}_{timestamp:.2f}s.mp4"
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out_writer = cv2.VideoWriter(str(output_file), fourcc, fps, (width, height))
+
+        if not out_writer.isOpened():
+            print(f"[WARN] Failed to open VideoWriter for {output_file}. Trying alternative XVID/AVI format...")
+            output_file = out_path / f"clip_frame_{frame_id}_{timestamp:.2f}s.avi"
+            fourcc = cv2.VideoWriter_fourcc(*'XVID')
+            out_writer = cv2.VideoWriter(str(output_file), fourcc, fps, (width, height))
+            if not out_writer.isOpened():
+                print(f"[ERROR] Alternative VideoWriter failed as well.")
+                cap.release()
+                return None
+
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        current_frame = start_frame
+        
+        while current_frame <= end_frame:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            out_writer.write(frame)
+            current_frame += 1
+
+        cap.release()
+        out_writer.release()
+        print(f"[INFO] Extracted clip for Frame {frame_id} at {timestamp:.2f}s -> {output_file}")
+        return str(output_file)
+
+    def search(self, query: str, top_k: int = 10, use_llm: bool = True,
+               video_path: Optional[str] = None, extract_clips: bool = True,
+               clip_duration: float = 6.0, clips_dir: str = "extracted_clips") -> dict:
+        # Auto-detect video path if not explicitly provided and clip extraction is requested
+        if extract_clips and not video_path:
+            # Look in videos/ folder first
+            videos_dir = Path("videos")
+            video_files = []
+            if videos_dir.exists() and videos_dir.is_dir():
+                video_files = list(videos_dir.glob("*.mp4")) + list(videos_dir.glob("*.avi")) + list(videos_dir.glob("*.mkv"))
+            if not video_files:
+                # Look in current working directory
+                video_files = list(Path(".").glob("*.mp4")) + list(Path(".").glob("*.avi"))
+            
+            if video_files:
+                video_path = str(video_files[0])
+                print(f"[INFO] Auto-detected video source for clipping: {video_path}")
+
         query_emb = self.encoder.encode(query)
         matches = self.faiss.search(query_emb, top_k)
 
-        results = []
+        # 1. Fetch matching frames first
+        matched_frames = []
         descriptions = []
         for fid, sim in matches:
             frame = self.db.get(fid)
             if frame:
-                results.append(SearchResult(frame.frame_id, frame.timestamp,
-                                            frame.description, sim))
+                matched_frames.append((frame, sim))
                 descriptions.append(frame.description)
 
+        # 2. Run generalized semantic check before executing clip extraction and LLM reasoning
+        is_match = True
         llm_answer = None
+
         if use_llm and self.llm and descriptions:
-            try:
-                llm_answer = self.llm.answer(query, descriptions)
-            except Exception as e:
-                print(f"[WARN] LLM failed: {e}")
-                llm_answer = "LLM reasoning unavailable."
+            stopwords = {
+                "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+                "in", "on", "at", "with", "of", "for", "by", "to", "from", "up", "down",
+                "person", "someone", "people", "man", "woman", "guy", "girl", "child",
+                "wearing", "wear", "wears", "dressed", "clothed", "attire",
+                "thing", "things", "item", "items", "something", "anything", "nothing",
+                "video", "frame", "description", "descriptions", "surveillance", "footage", "camera"
+            }
+            query_cleaned = query.lower().replace("-", " ")
+            query_words = [w.strip(".,?!()\"'") for w in query_cleaned.split()]
+            key_terms = [w for w in query_words if w and w not in stopwords and len(w) > 1]
+            
+            if key_terms:
+                has_matching_term = False
+                for desc in descriptions:
+                    desc_lower = desc.lower()
+                    for term in key_terms:
+                        if term in desc_lower:
+                            has_matching_term = True
+                            break
+                    if has_matching_term:
+                        break
+                
+                if not has_matching_term:
+                    is_match = False
+                    llm_answer = "No match was found."
+
+        results = []
+        
+        # 3. Only extract clips and query the LLM if we confirmed a true match exists!
+        if is_match:
+            for frame, sim in matched_frames:
+                clip_path = None
+                if extract_clips and video_path:
+                    clip_path = self.extract_clip(video_path, frame.timestamp, frame.frame_id, 
+                                                 clip_duration, clips_dir)
+                results.append(SearchResult(frame.frame_id, frame.timestamp,
+                                            frame.description, sim, clip_path))
+            
+            if use_llm and self.llm and descriptions and llm_answer is None:
+                try:
+                    llm_answer = self.llm.answer(query, descriptions)
+                except Exception as e:
+                    print(f"[WARN] LLM failed: {e}")
+                    llm_answer = "LLM reasoning unavailable."
 
         return {
             "query": query,
@@ -216,69 +360,40 @@ class VideoSearchService:
         }
 
 # ----------------------------------------------------------------------
-# FastAPI server (optional)
-# ----------------------------------------------------------------------
-
-def start_server(service: VideoSearchService, host="0.0.0.0", port=8000):
-    from fastapi import FastAPI
-    from pydantic import BaseModel
-    import uvicorn
-
-    app = FastAPI(title="Video Search API")
-
-    class SearchQuery(BaseModel):
-        query: str
-        top_k: int = 10
-        use_llm: bool = True
-
-    @app.get("/health")
-    def health():
-        return {"status": "ok"}
-
-    @app.post("/search")
-    def search_endpoint(req: SearchQuery):
-        result = service.search(req.query, req.top_k, req.use_llm)
-        return result
-
-    print(f"Starting API on http://{host}:{port}")
-    uvicorn.run(app, host=host, port=port)
-
-# ----------------------------------------------------------------------
-# CLI
+# CLI (Single Run)
 # ----------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="Online video search (CLI or API)")
-    parser.add_argument("command", nargs="?", choices=["search", "serve"], default="search",
-                        help="Run a single search or start the API server")
-    parser.add_argument("query", nargs="?", help="Text query (for 'search' command)")
-    parser.add_argument("--top-k", type=int, default=10, help="Number of results")
-    parser.add_argument("--use-llm", action="store_true", help="Enable LLM reasoning (SmolLM2)")
-    parser.add_argument("--llm-model", type=str, default=None,
-                        help="LLM model name (default HuggingFaceTB/SmolLM2-1.7B-Instruct)")
-    parser.add_argument("--db", default="video.db")
-    parser.add_argument("--faiss", default="video.faiss")
-    parser.add_argument("--map", default="video.json")
-    parser.add_argument("--output", help="Save JSON output to file")
-    parser.add_argument("--host", default="0.0.0.0", help="API server host")
-    parser.add_argument("--port", type=int, default=8000, help="API server port")
-    args = parser.parse_args()
-
-    service = VideoSearchService(db_path=args.db, faiss_path=args.faiss,
-                                 map_path=args.map, use_llm=args.use_llm,
-                                 llm_model_name=args.llm_model)
-
-    if args.command == "serve":
-        start_server(service, args.host, args.port)
-    else:
-        if not args.query:
-            print("Error: query required for 'search' command")
-            return
-        result = service.search(args.query, args.top_k, args.use_llm)
-        print(json.dumps(result, indent=2))
-        if args.output:
-            with open(args.output, "w") as f:
-                json.dump(result, f, indent=2)
+    import sys
+    if len(sys.argv) < 2:
+        print("Usage: python online_search.py <query>")
+        sys.exit(1)
+    
+    query = sys.argv[1]
+    print(f"[INFO] Initializing video search for query: '{query}'...")
+    
+    # Initialize service with default smart parameters (use Qwen-0.5B for fast, highly accurate local CPU reasoning)
+    service = VideoSearchService(
+        db_path="video.db",
+        faiss_path="video.faiss",
+        map_path="video.json",
+        use_llm=True,
+        llm_model_name="Qwen/Qwen2.5-0.5B-Instruct"
+    )
+    
+    # Search and automatically detect video, extract clips, and run LLM summarization
+    result = service.search(
+        query=query,
+        top_k=10,
+        use_llm=True,
+        video_path=None,
+        extract_clips=True,
+        clip_duration=6.0,
+        clips_dir="extracted_clips"
+    )
+    
+    print("\n--- SEARCH RESULTS ---")
+    print(json.dumps(result, indent=2))
 
 if __name__ == "__main__":
     main()
