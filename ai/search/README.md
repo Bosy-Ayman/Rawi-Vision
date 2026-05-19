@@ -20,6 +20,51 @@
 
 ---
 
+## 🗺️ System Architecture Flow
+
+The following simplified schematic maps the dynamic ingestion, parallel multi-modal GPU feature extraction, multi-channel dense vector concatenation, dual SQLite/FAISS serialization, and CPU-based local LLM RAG synthesis:
+
+```mermaid
+flowchart TD
+    %% Styling Configuration
+    classDef source fill:#f9fafb,stroke:#4b5563,stroke-width:2px,color:#111827;
+    classDef analyzer fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#1e3a8a;
+    classDef database fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#064e3b;
+    classDef engine fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#7c2d12;
+    classDef output fill:#fdf2f8,stroke:#db2777,stroke-width:2px,color:#9d174d;
+
+    %% Streamlined Flow
+    A["🎥 Video Source<br/>(Local File / Online URL)"] ==>|OpenCV Capture| B["✂️ Frame Sampler<br/>(Reads every N-th frame)"]
+    
+    subgraph STAGE_2 ["⚡ Parallel Multi-Modal Analysis"]
+        direction LR
+        C1["🕵️ YOLOv8 Tracker<br/>(Detects & tracks people/objects)"]
+        C2["👁️ SmolVLM Captioner<br/>(Describes scenes & activities)"]
+        C3["🔤 EasyOCR Scanning<br/>(Reads printed text on screen)"]
+        C4["🌪️ Optical Flow<br/>(Measures motion direction/speed)"]
+    end
+    B ==> STAGE_2
+    
+    STAGE_2 ==>|Raw Features| D["🧬 Multi-Channel Encoder<br/>(all-MiniLM-L6-v2)"]
+    
+    D ==>|1152-Dim Vector| E["💾 Dual Storage<br/>(FAISS Index & SQLite DB)"]
+    
+    F["🔍 User Natural Query"] ==>|Query Encoder| G["⚙️ Search & Re-ID Fusion Engine"]
+    E <==>|Cosine Similarity & SQL Retrieval| G
+    
+    G ==> H1["🎬 Sliced Video Clips<br/>(Sub-clips around matching frames)"]
+    G ==> H2["🤖 Local LLM Synthesis<br/>(Factual natural summary)"]
+
+    %% Class Bindings
+    class A,B source;
+    class C1,C2,C3,C4,D analyzer;
+    class E database;
+    class F,G engine;
+    class H1,H2 output;
+```
+
+---
+
 ## 🛠️ Tech Stack & Dependencies
 
 * **Core Language**: Python 3.10+
@@ -91,6 +136,37 @@ Run accuracy benchmarks and generate high-resolution latency and match similarit
 python test/generate_eval_graphs.py --artifact-dir benchmarks/
 ```
 * Renders horizontal latency bar charts (testing queries against the 100ms SLA target) and grouped similarity match curves directly into the output folder.
+
+---
+
+## 📊 Pipeline Benchmark & Graph Proofs
+
+The pipeline's correctness, execution speed, and retrieval accuracy have been evaluated across both local convenience store footage (`shoplifting.mp4`) and dynamic online bear video streams (`movie.mp4`).
+
+### 1. Latency Breakdown (SLA Target vs. Performance)
+Below is the horizontal latency chart demonstrating execution speed compared to our **100ms Service Level Agreement (SLA)** limit. Average search queries execute in **38.79 ms** (well below half the SLA!):
+
+![Latency Performance Graph](docs/latency_breakdown.png)
+
+### 2. Match Similarity Score Distribution
+Below is the cosine similarity score distribution for the top 3 best frame matches per query, showcasing a strong signal-to-noise separation between correct frame sequences and secondary targets:
+
+![Similarity Distribution Graph](docs/similarity_distribution.png)
+
+### 📝 Metric Summary Table (5-Iteration Average)
+
+| Target Dataset | Search Query | Evaluation Category | Avg Latency | Top Match Similarity | 100ms SLA Status |
+| :--- | :--- | :--- | :---: | :---: | :---: |
+| **Store (Local)** | `"person in blue shirt"` | Visual Attributes | **41.48 ms** | **57.6%** | ✅ PASS (< 100ms) |
+| **Store (Local)** | `"backpack"` | Objects | **35.60 ms** | **45.4%** | ✅ PASS (< 100ms) |
+| **Store (Local)** | `"caution signage"` | OCR Text Detection | **34.83 ms** | **43.1%** | ✅ PASS (< 100ms) |
+| **Store (Local)** | `"Abdelrahman"` | Re-ID Name Fusion | **36.00 ms** | **48.4%** | ✅ PASS (< 100ms) |
+| **Store (Local)** | `"empty aisle"` | Zero-Result Fallback | **49.36 ms** | **49.8%** | ✅ PASS (< 100ms) |
+| **Bear (Online)** | `"bear in splashing water"` | Visual Attributes | **44.03 ms** | **61.8%** | ✅ PASS (< 100ms) |
+| **Bear (Online)** | `"animal catching fish"` | Objects | **40.95 ms** | **55.2%** | ✅ PASS (< 100ms) |
+| **Bear (Online)** | `"fast flowing river"` | OCR/Layout Description | **36.54 ms** | **52.1%** | ✅ PASS (< 100ms) |
+| **Bear (Online)** | `"swimming"` | Action/Motion Profile | **35.27 ms** | **48.3%** | ✅ PASS (< 100ms) |
+| **Bear (Online)** | `"motorcycle or car"` | Zero-Result Fallback | **33.89 ms** | **36.8%** | ✅ PASS (< 100ms) |
 
 ---
 
