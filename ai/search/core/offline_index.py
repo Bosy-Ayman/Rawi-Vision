@@ -126,14 +126,7 @@ class FAISSIdx:
 
 class FrameEncoder:
     def __init__(self, use_vlm: bool = True):
-        print("[INFO] Loading embedding model...")
-        self.emb_model = SentenceTransformer(EMBEDDING_MODEL, device=DEVICE)
-
-        print("[INFO] Loading YOLO model...")
-        self.yolo_model = YOLO("yolov8m.pt")
-        if DEVICE == "cuda":
-            self.yolo_model = self.yolo_model.to(DEVICE)
-
+        # 1. Load VLM first when memory is completely fresh and unfragmented
         self.vlm = None
         self.vlm_proc = None
         if use_vlm:
@@ -152,6 +145,13 @@ class FrameEncoder:
                 print(f"[WARN] Failed to load VLM: {e}")
                 self.vlm = None
 
+        # 2. Load YOLO model
+        print("[INFO] Loading YOLO model...")
+        self.yolo_model = YOLO("yolov8m.pt")
+        if DEVICE == "cuda":
+            self.yolo_model = self.yolo_model.to(DEVICE)
+
+        # 3. Load EasyOCR reader
         print("[INFO] Loading EasyOCR reader...")
         try:
             self.ocr_reader = easyocr.Reader(['en'], gpu=DEVICE == "cuda")
@@ -159,6 +159,10 @@ class FrameEncoder:
         except Exception as e:
             print(f"[WARN] Failed to load EasyOCR: {e}")
             self.ocr_reader = None
+
+        # 4. Load Sentence Transformer embedding model
+        print("[INFO] Loading embedding model...")
+        self.emb_model = SentenceTransformer(EMBEDDING_MODEL, device=DEVICE)
 
         print("[INFO] FrameEncoder ready")
 
