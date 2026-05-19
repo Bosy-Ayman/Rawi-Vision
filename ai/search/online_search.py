@@ -3,6 +3,8 @@
 import json
 import sqlite3
 import argparse
+import csv
+from datetime import datetime
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import List, Optional, Tuple
@@ -238,6 +240,29 @@ class VideoSearchService:
             except Exception as e:
                 print(f"[WARN] Failed to load LLM: {e}")
 
+    def load_realtime_events(self) -> List[dict]:
+        paths = [
+            Path("events.csv"),
+            Path("../backend/events.csv"),
+            Path("../../backend/events.csv"),
+            Path("backend/events.csv"),
+            Path("backend/camera_ingestion/ai/events.csv"),
+            Path("../backend/camera_ingestion/ai/events.csv")
+        ]
+        for p in paths:
+            if p.exists():
+                try:
+                    events = []
+                    with open(p, "r") as f:
+                        reader = csv.DictReader(f)
+                        for row in reader:
+                            events.append(row)
+                    print(f"[INFO] Successfully loaded {len(events)} real-time events from {p}")
+                    return events
+                except Exception as e:
+                    print(f"[WARN] Failed to read events.csv at {p}: {e}")
+        return []
+
     def extract_clip(self, video_path: str, timestamp: float, frame_id: int, 
                      duration: float = 6.0, output_dir: str = "extracted_clips") -> Optional[str]:
         try:
@@ -321,17 +346,47 @@ class VideoSearchService:
                 video_path = str(video_files[0])
                 print(f"[INFO] Auto-detected video source for clipping: {video_path}")
 
+        # Load real-time attendance events from events.csv
+        rt_events = self.load_realtime_events()
+
+        # Clean and tokenize query words to match against registered names in events.csv
+        query_words_lower = [w.strip(".,?!()\"'").lower() for w in query.split()]
+        matched_rt_tracks = set()
+        matched_rt_names = set()
+        for row in rt_events:
+            row_name = row.get("name", "").strip().lower()
+            if row_name and row_name != "unknown":
+                if any(word == row_name or row_name in word for word in query_words_lower):
+                    track_id_str = row.get("track_id", "")
+                    if track_id_str:
+                        matched_rt_tracks.add(int(track_id_str))
+                        matched_rt_names.add(row.get("name"))
+
         query_emb = self.encoder.encode(query)
         matches = self.faiss.search(query_emb, top_k)
 
-        # 1. Fetch matching frames first
+        # 1. Fetch matching frames first and enrich them with real-time identities
         matched_frames = []
         descriptions = []
         for fid, sim in matches:
             frame = self.db.get(fid)
             if frame:
-                matched_frames.append((frame, sim))
-                descriptions.append(frame.description)
+                frame_track_ids = [int(t) for t in frame.tracks.split(",") if t.strip()] if getattr(frame, "tracks", None) else []
+                is_name_match = any(t in matched_rt_tracks for t in frame_track_ids)
+                
+                # Fuse visual VLM description with real-time Face Recognition metadata
+                enriched_desc = frame.description
+                active_names = []
+                for t in frame_track_ids:
+                    for row in rt_events:
+                        if row.get("track_id") == str(t) and row.get("name") and row.get("name").lower() != "unknown":
+                            active_names.append(f"{row.get('name')} (Track {t})")
+                            break
+                if active_names:
+                    enriched_desc = f"{frame.description} [Real-time Identity: {', '.join(active_names)}]"
+
+                matched_frames.append((frame, sim, enriched_desc, is_name_match))
+                descriptions.append(enriched_desc)
 
         # 2. Run generalized semantic check before executing clip extraction and LLM reasoning
         is_match = True
@@ -361,6 +416,10 @@ class VideoSearchService:
                     if has_matching_term:
                         break
                 
+                # If a name match occurred in real-time events.csv, confirm semantic match
+                if matched_rt_tracks:
+                    has_matching_term = True
+
                 if not has_matching_term:
                     is_match = False
                     llm_answer = "No match was found."
@@ -370,14 +429,14 @@ class VideoSearchService:
         
         # 3. Only extract clips and query the LLM if we confirmed a true match exists!
         if is_match:
-            for frame, sim in matched_frames:
+            for frame, sim, enriched_desc, _ in matched_frames:
                 clip_path = None
                 if extract_clips and video_path:
                     clip_path = self.extract_clip(video_path, frame.timestamp, frame.frame_id, 
                                                  clip_duration, clips_dir)
                 track_ids = [int(t) for t in frame.tracks.split(",") if t.strip()] if getattr(frame, "tracks", None) else []
                 results.append(SearchResult(frame.frame_id, frame.timestamp,
-                                            frame.description, sim, clip_path, track_ids))
+                                            enriched_desc, sim, clip_path, track_ids))
             
             # Perform Multi-Subject Re-ID profiling
             active_track_ids = set()
@@ -418,11 +477,19 @@ class VideoSearchService:
                     print(f"[WARN] LLM failed: {e}")
                     llm_answer = "LLM reasoning unavailable."
 
+        # Filter real-time events to only return rows relevant to matching tracks or queried names
+        filtered_rt_events = []
+        active_track_ids_str = {str(t) for t in active_track_ids} if 'active_track_ids' in locals() else set()
+        for row in rt_events:
+            if row.get("track_id") in active_track_ids_str or any(word in row.get("name", "").lower() for word in query_words_lower):
+                filtered_rt_events.append(row)
+
         return {
             "query": query,
             "total_results": len(results),
             "results": [asdict(r) for r in results],
             "reid_tracks": reid_tracks,
+            "realtime_events": filtered_rt_events,
             "llm_answer": llm_answer,
             "note": "Similarity scores are percentages (0-100). Scores above 20% indicate potential matches."
         }
