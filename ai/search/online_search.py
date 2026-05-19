@@ -35,6 +35,7 @@ class Frame:
     frame_id: int
     timestamp: float
     description: str
+    tracks: Optional[str] = ""
 
 @dataclass
 class SearchResult:
@@ -43,6 +44,7 @@ class SearchResult:
     description: str
     similarity: float
     clip_path: Optional[str] = None
+    track_ids: Optional[List[int]] = None
 
 @dataclass
 class SearchResponse:
@@ -64,18 +66,49 @@ class VideoDB:
 
     def get(self, frame_id: int) -> Optional[Frame]:
         with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute(
-                "SELECT frame_id, timestamp, description FROM frames WHERE frame_id=?",
-                (frame_id,)
-            ).fetchone()
-        return Frame(*row) if row else None
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(frames)")
+            cols = [c[1] for c in cursor.fetchall()]
+            
+            if "tracks" in cols:
+                row = conn.execute(
+                    "SELECT frame_id, timestamp, description, tracks FROM frames WHERE frame_id=?",
+                    (frame_id,)
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT frame_id, timestamp, description FROM frames WHERE frame_id=?",
+                    (frame_id,)
+                ).fetchone()
+        
+        if not row:
+            return None
+        if len(row) == 4:
+            return Frame(row[0], row[1], row[2], row[3])
+        return Frame(row[0], row[1], row[2], "")
 
     def get_all(self) -> List[Frame]:
         with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                "SELECT frame_id, timestamp, description FROM frames ORDER BY timestamp"
-            ).fetchall()
-        return [Frame(*row) for row in rows]
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(frames)")
+            cols = [c[1] for c in cursor.fetchall()]
+            
+            if "tracks" in cols:
+                rows = conn.execute(
+                    "SELECT frame_id, timestamp, description, tracks FROM frames ORDER BY timestamp"
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT frame_id, timestamp, description FROM frames ORDER BY timestamp"
+                ).fetchall()
+                
+        results = []
+        for r in rows:
+            if len(r) == 4:
+                results.append(Frame(r[0], r[1], r[2], r[3]))
+            else:
+                results.append(Frame(r[0], r[1], r[2], ""))
+        return results
 
 # ----------------------------------------------------------------------
 # FAISS Index (read‑only)
@@ -333,6 +366,7 @@ class VideoSearchService:
                     llm_answer = "No match was found."
 
         results = []
+        reid_tracks = {}
         
         # 3. Only extract clips and query the LLM if we confirmed a true match exists!
         if is_match:
@@ -341,12 +375,45 @@ class VideoSearchService:
                 if extract_clips and video_path:
                     clip_path = self.extract_clip(video_path, frame.timestamp, frame.frame_id, 
                                                  clip_duration, clips_dir)
+                track_ids = [int(t) for t in frame.tracks.split(",") if t.strip()] if getattr(frame, "tracks", None) else []
                 results.append(SearchResult(frame.frame_id, frame.timestamp,
-                                            frame.description, sim, clip_path))
+                                            frame.description, sim, clip_path, track_ids))
             
+            # Perform Multi-Subject Re-ID profiling
+            active_track_ids = set()
+            for r in results:
+                if r.track_ids:
+                    active_track_ids.update(r.track_ids)
+            
+            if active_track_ids:
+                all_frames = self.db.get_all()
+                for track_id in active_track_ids:
+                    appearances = []
+                    for f in all_frames:
+                        if getattr(f, "tracks", None):
+                            f_track_ids = [int(t) for t in f.tracks.split(",") if f.tracks.strip()]
+                            if track_id in f_track_ids:
+                                appearances.append({
+                                    "frame_id": f.frame_id,
+                                    "timestamp": round(f.timestamp, 2)
+                                })
+                    reid_tracks[f"Track {track_id}"] = appearances
+
+            # If we have Re-ID track timelines, format them as structured context for LLM track analysis
+            tracking_context_str = ""
+            if reid_tracks:
+                tracking_context_str = "\nSubject Tracking & Re-ID Timelines:\n"
+                for track_name, apps in reid_tracks.items():
+                    timestamps_str = ", ".join([f"{a['timestamp']}s" for a in apps])
+                    tracking_context_str += f"- {track_name} was detected at: {timestamps_str}\n"
+
             if use_llm and self.llm and descriptions and llm_answer is None:
                 try:
-                    llm_answer = self.llm.answer(query, descriptions)
+                    # Merge descriptive context and Re-ID tracking timeline context
+                    combined_descriptions = list(descriptions)
+                    if tracking_context_str:
+                        combined_descriptions.append(tracking_context_str)
+                    llm_answer = self.llm.answer(query, combined_descriptions)
                 except Exception as e:
                     print(f"[WARN] LLM failed: {e}")
                     llm_answer = "LLM reasoning unavailable."
@@ -355,6 +422,7 @@ class VideoSearchService:
             "query": query,
             "total_results": len(results),
             "results": [asdict(r) for r in results],
+            "reid_tracks": reid_tracks,
             "llm_answer": llm_answer,
             "note": "Similarity scores are percentages (0-100). Scores above 20% indicate potential matches."
         }

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-
 import json
 import sqlite3
 import argparse
@@ -13,7 +12,7 @@ import cv2
 import numpy as np
 import torch
 from PIL import Image
-from transformers import AutoModelForVision2Seq, AutoProcessor
+from transformers import AutoModelForCausalLM, AutoProcessor
 from sentence_transformers import SentenceTransformer
 import faiss
 from ultralytics import YOLO
@@ -55,12 +54,19 @@ class VideoDB:
                 )
             """)
             conn.commit()
+            
+            # Dynamic migration: add tracks column if not already present
+            try:
+                conn.execute("ALTER TABLE frames ADD COLUMN tracks TEXT")
+                conn.commit()
+            except sqlite3.OperationalError:
+                pass
 
-    def save(self, frame_id: int, timestamp: float, description: str):
+    def save(self, frame_id: int, timestamp: float, description: str, tracks: str = ""):
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO frames VALUES (?, ?, ?)",
-                (frame_id, timestamp, description)
+                "INSERT OR REPLACE INTO frames VALUES (?, ?, ?, ?)",
+                (frame_id, timestamp, description, tracks)
             )
             conn.commit()
 
@@ -118,7 +124,7 @@ class FrameEncoder:
         if use_vlm:
             print("[INFO] Loading VLM (this may take a minute)...")
             try:
-                self.vlm = AutoModelForVision2Seq.from_pretrained(
+                self.vlm = AutoModelForCausalLM.from_pretrained(
                     VLM_MODEL,
                     torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32,
                     device_map="auto",
@@ -141,6 +147,20 @@ class FrameEncoder:
             return sorted(objects)
         except Exception as e:
             print(f"[WARN] Object detection failed: {e}")
+            return []
+
+    def track_subjects(self, frame_bgr: np.ndarray) -> List[int]:
+        try:
+            # Persistent multi-object tracking via YOLOv8 built-in ByteTrack/BoT-SORT
+            results = self.yolo_model.track(frame_bgr, persist=True, verbose=False)
+            track_ids = []
+            for r in results:
+                if r.boxes is not None and r.boxes.id is not None:
+                    for cls_id, track_id in zip(r.boxes.cls, r.boxes.id):
+                        if int(cls_id) == 0:  # 0 is the COCO person class
+                            track_ids.append(int(track_id))
+            return sorted(list(set(track_ids)))
+        except Exception:
             return []
 
     def motion_vector(self, frame_bgr: np.ndarray,
@@ -207,7 +227,10 @@ class FrameEncoder:
         return f"A {light}, {detail} scene."
 
     def encode_frame(self, frame_bgr: np.ndarray,
-                     prev_frame_bgr: Optional[np.ndarray] = None) -> Tuple[np.ndarray, str]:
+                     prev_frame_bgr: Optional[np.ndarray] = None) -> Tuple[np.ndarray, str, List[int]]:
+        # Tracks
+        track_ids = self.track_subjects(frame_bgr)
+
         # Objects
         objects = self.detect_objects(frame_bgr)
         obj_text = "Objects: " + ", ".join(objects) if objects else "no objects"
@@ -231,7 +254,7 @@ class FrameEncoder:
         combined = combined / norm
 
         full_desc = f"{desc_text} | {obj_text} | {motion_text}"
-        return combined.astype(np.float32), full_desc
+        return combined.astype(np.float32), full_desc, track_ids
 
 # ----------------------------------------------------------------------
 # Main indexing loop
@@ -276,13 +299,14 @@ def index_video(source: str, sampling: int, db_path="video.db",
             timestamp = (indexed_frame / fps) if fps > 0 else time.time() - start
 
             t0 = time.time()
-            embedding, full_desc = encoder.encode_frame(frame, prev_frame)
+            embedding, full_desc, track_ids = encoder.encode_frame(frame, prev_frame)
             elapsed = time.time() - t0
 
-            db.save(indexed_frame, timestamp, full_desc)
+            tracks_str = ",".join(map(str, track_ids))
+            db.save(indexed_frame, timestamp, full_desc, tracks_str)
             faiss_idx.add(indexed_frame, embedding)
 
-            print(f"[{sampled_count}] Frame {indexed_frame}/{total_frames} | {full_desc[:80]}... ({elapsed:.2f}s)")
+            print(f"[{sampled_count}] Frame {indexed_frame}/{total_frames} | {full_desc[:80]}... (tracks: {tracks_str}) ({elapsed:.2f}s)")
             prev_frame = frame
 
     except KeyboardInterrupt:
