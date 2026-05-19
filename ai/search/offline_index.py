@@ -116,7 +116,7 @@ class FrameEncoder:
         self.emb_model = SentenceTransformer(EMBEDDING_MODEL, device=DEVICE)
 
         print("[INFO] Loading YOLO model...")
-        self.yolo_model = YOLO("yolov8n.pt")
+        self.yolo_model = YOLO("yolov8m.pt")
         if DEVICE == "cuda":
             self.yolo_model = self.yolo_model.to(DEVICE)
 
