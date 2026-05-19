@@ -25,7 +25,7 @@ import cv2
 import numpy as np
 import torch
 from PIL import Image
-from transformers import AutoModelForCausalLM, AutoProcessor
+from transformers import AutoModelForImageTextToText, AutoProcessor
 from sentence_transformers import SentenceTransformer
 import faiss
 from ultralytics import YOLO
@@ -139,11 +139,12 @@ class FrameEncoder:
         if use_vlm:
             print("[INFO] Loading VLM (this may take a minute)...")
             try:
-                self.vlm = AutoModelForCausalLM.from_pretrained(
+                self.vlm = AutoModelForImageTextToText.from_pretrained(
                     VLM_MODEL,
-                    torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32,
+                    torch_dtype=torch.float16 if DEVICE == "cuda" else torch.bfloat16,
                     device_map="auto",
-                    trust_remote_code=True
+                    trust_remote_code=True,
+                    low_cpu_mem_usage=True
                 )
                 self.vlm_proc = AutoProcessor.from_pretrained(VLM_MODEL)
                 print("[INFO] VLM loaded")
@@ -243,14 +244,14 @@ class FrameEncoder:
             return self._fallback(frame_rgb, objects, ocr_words, motion_text)
         try:
             img = Image.fromarray(frame_rgb)
-            prompt = "Describe this image briefly, including actions and spatial relations."
+            prompt = "Describe this image in detail, including the person's appearance, clothing colors, objects, actions, and spatial relations."
             if object_hint:
                 prompt += f" Detected objects: {object_hint}."
             messages = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": prompt}]}]
             prompt = self.vlm_proc.apply_chat_template(messages, add_generation_prompt=True)
             inputs = self.vlm_proc(text=prompt, images=img, return_tensors="pt").to(DEVICE)
             with torch.no_grad():
-                out = self.vlm.generate(**inputs, max_new_tokens=80, do_sample=False)
+                out = self.vlm.generate(**inputs, max_new_tokens=120, do_sample=False)
             out = out[:, inputs["input_ids"].shape[1]:]
             return self.vlm_proc.batch_decode(out, skip_special_tokens=True)[0].strip()
         except Exception as e:
