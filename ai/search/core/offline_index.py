@@ -21,6 +21,7 @@ import easyocr
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # --- Configurable models ---
+
 VLM_MODEL = "HuggingFaceTB/SmolVLM-Instruct"
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"   # 384-dim
 EMBEDDING_DIM = 384
@@ -296,8 +297,26 @@ class FrameEncoder:
 
 def index_video(source: str, sampling: int, db_path="video.db",
                 faiss_path="video.faiss", map_path="video.json"):
-    db = VideoDB(db_path)
-    faiss_idx = FAISSIdx(faiss_path, map_path)
+    # Resolve output paths to data/ subfolder dynamically
+    def resolve_output_path(filename: str) -> str:
+        if Path(filename).is_absolute():
+            return filename
+        # Check if running in core/, output to ../data/filename
+        p_parent_data = Path(__file__).resolve().parent.parent / "data"
+        if p_parent_data.exists():
+            return str(p_parent_data / filename)
+        # Check if running in search/, output to data/filename
+        p_data = Path("data")
+        if p_data.exists():
+            return str(p_data / filename)
+        return filename
+
+    resolved_db = resolve_output_path(db_path)
+    resolved_faiss = resolve_output_path(faiss_path)
+    resolved_map = resolve_output_path(map_path)
+
+    db = VideoDB(resolved_db)
+    faiss_idx = FAISSIdx(resolved_faiss, resolved_map)
     encoder = FrameEncoder(use_vlm=True)
 
     if source == "0":

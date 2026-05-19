@@ -16,10 +16,16 @@ import cv2
 import sqlite3
 from pathlib import Path
 
+import sys
+from pathlib import Path
+
+# Resolve import paths to the peer core/ directory
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
 # Try importing the components
 try:
-    from offline_index import FrameEncoder
-    from online_search import VideoSearchService
+    from core.offline_index import FrameEncoder
+    from core.online_search import VideoSearchService
     IMPORTS_OK = True
 except ImportError as e:
     print(f"[ERROR] Failed to import project components: {e}")

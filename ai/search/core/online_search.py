@@ -228,8 +228,30 @@ class LLMReasoner:
 class VideoSearchService:
     def __init__(self, db_path="video.db", faiss_path="video.faiss",
                  map_path="video.json", use_llm=True, llm_model_name=None):
-        self.db = VideoDB(db_path)
-        self.faiss = FAISSIdx(faiss_path, map_path)
+        # Resolve paths dynamically to handle execution from core/ or search/ root directory cleanly
+        def get_fallback(filename: str) -> str:
+            if Path(filename).exists():
+                return filename
+            # Check data/
+            p_data = Path("data") / filename
+            if p_data.exists():
+                return str(p_data)
+            # Check ../data/ (when running from core/ or test/)
+            p_parent_data = Path(__file__).resolve().parent.parent / "data" / filename
+            if p_parent_data.exists():
+                return str(p_parent_data)
+            # Check in current dir relative (e.g. if we are running in core)
+            p_relative = Path(__file__).resolve().parent / filename
+            if p_relative.exists():
+                return str(p_relative)
+            return filename
+
+        resolved_db = get_fallback(db_path)
+        resolved_faiss = get_fallback(faiss_path)
+        resolved_map = get_fallback(map_path)
+
+        self.db = VideoDB(resolved_db)
+        self.faiss = FAISSIdx(resolved_faiss, resolved_map)
         self.encoder = QueryEncoder()
 
         self.llm = None
@@ -243,6 +265,9 @@ class VideoSearchService:
     def load_realtime_events(self) -> List[dict]:
         paths = [
             Path("events.csv"),
+            Path("data/events.csv"),
+            Path("../data/events.csv"),
+            Path(__file__).resolve().parent.parent / "data" / "events.csv",
             Path("../backend/events.csv"),
             Path("../../backend/events.csv"),
             Path("backend/events.csv"),

@@ -89,10 +89,27 @@ print(json.dumps(result, indent=2))
 ## Files
 
 - `video_search.py` - Main module (run this)
-- `USAGE.txt` - Detailed usage guide
 
-## Next
+## the flow 
 
-Ready to send results to your backend! The JSON format works with any backend.
-
-For detailed info, see `USAGE.txt`
+```
+ai/search/
+├── core/                  # Core Python modules
+│   ├── offline_index.py   # Vector/OCR indexer
+│   └── online_search.py   # RAG Search Service
+│
+├── test/                  # Verification & benchmarking suite
+│   ├── test_search_pipeline.py
+│   └── evaluate_pipeline.py
+│
+├── data/                  # Storage assets (easily connected to Postgres)
+│   ├── video.db           # SQLite (or target PostgreSQL)
+│   ├── video.faiss        # High-dimensional FAISS vectors
+│   ├── video.json         # Index-to-frame mappings
+│   └── events.csv         # Real-time face identities log
+│
+├── docs/                  # System architectures & documentation reports
+│   ├── notes.md
+│   └── rawi_vision_search_report.md
+│
+└── requirements.txt

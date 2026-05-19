@@ -10,8 +10,13 @@ import time
 import json
 import sqlite3
 import numpy as np
+import sys
 from pathlib import Path
-from online_search import VideoSearchService
+
+# Resolve import paths to peer core/ directory
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
+from core.online_search import VideoSearchService
 
 
 def print_title(title):
