@@ -14,6 +14,7 @@ from camera_onboarding.routers.discovery import camera_discovery_router
 from camera_ingestion.routers.ingestion import ingestion_router
 from camera_ingestion.routers.stream import stream_router
 from attendance.routers.attendance import attendance_router
+from subscription.routers.subscription import subscription_router
 
 from database import get_db
 from minio import Minio
@@ -104,3 +105,4 @@ app.include_router(camera_discovery_router)
 app.include_router(ingestion_router)
 app.include_router(stream_router)
 app.include_router(attendance_router)
+app.include_router(subscription_router)
