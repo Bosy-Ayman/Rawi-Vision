@@ -16,6 +16,7 @@ from transformers import AutoModelForCausalLM, AutoProcessor
 from sentence_transformers import SentenceTransformer
 import faiss
 from ultralytics import YOLO
+import easyocr
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -135,6 +136,15 @@ class FrameEncoder:
             except Exception as e:
                 print(f"[WARN] Failed to load VLM: {e}")
                 self.vlm = None
+
+        print("[INFO] Loading EasyOCR reader...")
+        try:
+            self.ocr_reader = easyocr.Reader(['en'], gpu=DEVICE == "cuda")
+            print("[INFO] EasyOCR reader loaded")
+        except Exception as e:
+            print(f"[WARN] Failed to load EasyOCR: {e}")
+            self.ocr_reader = None
+
         print("[INFO] FrameEncoder ready")
 
     def detect_objects(self, frame_bgr: np.ndarray) -> List[str]:
@@ -147,6 +157,21 @@ class FrameEncoder:
             return sorted(objects)
         except Exception as e:
             print(f"[WARN] Object detection failed: {e}")
+            return []
+
+    def extract_text(self, frame_bgr: np.ndarray) -> List[str]:
+        if getattr(self, "ocr_reader", None) is None:
+            return []
+        try:
+            results = self.ocr_reader.readtext(frame_bgr, detail=0)
+            words = set()
+            for r in results:
+                clean_word = r.strip()
+                if clean_word and len(clean_word) > 1:
+                    words.add(clean_word)
+            return sorted(list(words))
+        except Exception as e:
+            print(f"[WARN] OCR text extraction failed: {e}")
             return []
 
     def track_subjects(self, frame_bgr: np.ndarray) -> List[int]:
@@ -235,6 +260,15 @@ class FrameEncoder:
         objects = self.detect_objects(frame_bgr)
         obj_text = "Objects: " + ", ".join(objects) if objects else "no objects"
 
+        # OCR text extraction
+        ocr_words = self.extract_text(frame_bgr)
+        ocr_text = "Text detected: " + ", ".join(ocr_words) if ocr_words else "no text"
+
+        # Fuse OCR with objects text for embedding component (keeps total FAISS dimension exactly 1152)
+        obj_ocr_text = obj_text
+        if ocr_words:
+            obj_ocr_text += ", with detected text: " + ", ".join(ocr_words)
+
         # VLM caption
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         desc_text = self.describe_vlm(frame_rgb, obj_text)
@@ -244,7 +278,7 @@ class FrameEncoder:
         motion_text = "Motion: " + self.motion_to_text(avg_mag, angle)
 
         # Embed each textual component
-        emb_obj = self.emb_model.encode(obj_text, convert_to_numpy=True)
+        emb_obj = self.emb_model.encode(obj_ocr_text, convert_to_numpy=True)
         emb_desc = self.emb_model.encode(desc_text, convert_to_numpy=True)
         emb_mot = self.emb_model.encode(motion_text, convert_to_numpy=True)
 
@@ -253,7 +287,7 @@ class FrameEncoder:
         norm = np.linalg.norm(combined) + 1e-8
         combined = combined / norm
 
-        full_desc = f"{desc_text} | {obj_text} | {motion_text}"
+        full_desc = f"{desc_text} | {obj_ocr_text} | {motion_text} | {ocr_text}"
         return combined.astype(np.float32), full_desc, track_ids
 
 # ----------------------------------------------------------------------

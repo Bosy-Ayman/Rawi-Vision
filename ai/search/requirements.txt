@@ -7,3 +7,4 @@ numpy>=1.24.0
 faiss-cpu>=1.7.4
 Pillow>=10.0.0
 confluent-kafka>=2.3.0
+easyocr>=1.7.2
