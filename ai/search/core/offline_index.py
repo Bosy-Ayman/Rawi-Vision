@@ -225,9 +225,9 @@ class FrameEncoder:
             return f"{speed} {direction}"
         return speed
 
-    def describe_vlm(self, frame_rgb: np.ndarray, object_hint: str = "") -> str:
+    def describe_vlm(self, frame_rgb: np.ndarray, object_hint: str = "", objects: List[str] = None, ocr_words: List[str] = None, motion_text: str = "") -> str:
         if self.vlm is None:
-            return self._fallback(frame_rgb)
+            return self._fallback(frame_rgb, objects, ocr_words, motion_text)
         try:
             img = Image.fromarray(frame_rgb)
             prompt = "Describe this image briefly, including actions and spatial relations."
@@ -242,15 +242,23 @@ class FrameEncoder:
             return self.vlm_proc.batch_decode(out, skip_special_tokens=True)[0].strip()
         except Exception as e:
             print(f"[WARN] VLM inference failed: {e}")
-            return self._fallback(frame_rgb)
+            return self._fallback(frame_rgb, objects, ocr_words, motion_text)
 
-    def _fallback(self, frame_rgb: np.ndarray) -> str:
+    def _fallback(self, frame_rgb: np.ndarray, objects: List[str] = None, ocr_words: List[str] = None, motion_text: str = "") -> str:
         gray = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2GRAY)
         brightness = np.mean(gray)
-        light = "bright" if brightness > 150 else "dim" if brightness < 100 else "normal"
+        light = "bright" if brightness > 150 else "dim" if brightness < 100 else "normally lit"
         edges = cv2.Canny(gray, 100, 200)
-        detail = "detailed" if np.sum(edges > 0) / edges.size > 0.05 else "simple"
-        return f"A {light}, {detail} scene."
+        detail = "highly detailed" if np.sum(edges > 0) / edges.size > 0.05 else "simple"
+        
+        desc = f"A {light}, {detail} surveillance camera frame."
+        if objects:
+            desc += f" Visible elements: {', '.join(objects)}."
+        if ocr_words:
+            desc += f" Detected text labels: {', '.join(ocr_words)}."
+        if motion_text and "static" not in motion_text:
+            desc += f" Motion profile: {motion_text}."
+        return desc
 
     def encode_frame(self, frame_bgr: np.ndarray,
                      prev_frame_bgr: Optional[np.ndarray] = None) -> Tuple[np.ndarray, str, List[int]]:
@@ -270,13 +278,14 @@ class FrameEncoder:
         if ocr_words:
             obj_ocr_text += ", with detected text: " + ", ".join(ocr_words)
 
-        # VLM caption
-        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-        desc_text = self.describe_vlm(frame_rgb, obj_text)
-
         # Motion
         avg_mag, angle = self.motion_vector(frame_bgr, prev_frame_bgr)
-        motion_text = "Motion: " + self.motion_to_text(avg_mag, angle)
+        motion_desc = self.motion_to_text(avg_mag, angle)
+        motion_text = "Motion: " + motion_desc
+
+        # VLM caption (falls back to premium synthesis if offline)
+        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        desc_text = self.describe_vlm(frame_rgb, obj_text, objects, ocr_words, motion_desc)
 
         # Embed each textual component
         emb_obj = self.emb_model.encode(obj_ocr_text, convert_to_numpy=True)
