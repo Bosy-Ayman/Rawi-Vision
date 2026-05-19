@@ -135,12 +135,13 @@ class FrameEncoder:
                 self.vlm = AutoModelForImageTextToText.from_pretrained(
                     VLM_MODEL,
                     torch_dtype=torch.float16 if DEVICE == "cuda" else torch.bfloat16,
-                    device_map="auto",
                     trust_remote_code=True,
                     low_cpu_mem_usage=True
                 )
+                if DEVICE == "cuda":
+                    self.vlm = self.vlm.to(DEVICE)
                 self.vlm_proc = AutoProcessor.from_pretrained(VLM_MODEL)
-                print("[INFO] VLM loaded")
+                print("[INFO] VLM loaded successfully on GPU")
             except Exception as e:
                 print(f"[WARN] Failed to load VLM: {e}")
                 self.vlm = None
