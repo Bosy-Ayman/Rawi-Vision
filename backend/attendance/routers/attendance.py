@@ -1,7 +1,7 @@
 from fastapi import APIRouter, status, HTTPException, Depends
 from ..service.attendance import AttendanceService
 from ..repository.attendance import AttendanceRepository
-from ..schemas.attendance import AttendanceCreate, AttendanceResponse
+from ..schemas.attendance import AttendanceCreate, AttendanceResponse, AttendanceWithEmployeeResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import db_dependency
 from database import get_db
@@ -15,7 +15,7 @@ def get_attendance_repository(db: AsyncSession=Depends(get_db)):
 def get_attendance_service(repo:AttendanceRepository = Depends(get_attendance_repository)):
     return AttendanceService(repository=repo)
 
-@attendance_router.get("", response_model=list[AttendanceResponse])
+@attendance_router.get("", response_model=list[AttendanceWithEmployeeResponse])
 async def get_all_attendance_records(service: AttendanceService= Depends(get_attendance_service)):
     try:
         attendance_records = await service.get_all_attendance_records()
