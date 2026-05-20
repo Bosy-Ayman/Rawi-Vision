@@ -133,7 +133,7 @@ def compute_metrics(retrieved_ids, ground_truth):
         if fid in ground_truth:
             hits += 1
             ap_sum += hits / (idx + 1)
-    ap = ap_sum / min(len(ground_truth), len(retrieved_ids)) if len(ground_truth) > 0 else 0.0
+    ap = ap_sum / min(len(ground_truth), len(retrieved_ids)) if len(ground_truth) > 0 and len(retrieved_ids) > 0 else 0.0
     
     return p_1, p_3, p_5, r_5, f1_5, ap
 
