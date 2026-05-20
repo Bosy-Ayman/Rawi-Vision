@@ -356,6 +356,7 @@ The structural schema returned by the search engine interface for developer inte
   "llm_answer": "Abdelrahman (Track 1) is visible in the aisle standing near products.",
   "note": "Similarity scores are percentages (0-100). Scores above 20% indicate potential matches."
 }
+```
 
 ---
 
