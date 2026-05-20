@@ -439,7 +439,7 @@ class VideoSearchService:
         is_match = True
         llm_answer = None
 
-        if use_llm and self.llm and descriptions:
+        if descriptions:
             stopwords = {
                 "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
                 "in", "on", "at", "with", "of", "for", "by", "to", "from", "up", "down",

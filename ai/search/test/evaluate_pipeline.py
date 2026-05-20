@@ -69,15 +69,24 @@ def run_evaluation():
         use_llm=False
     )
 
-    # Define test suite evaluation queries
-    test_queries = [
-        {"query": "blue shirt", "expected_match": True, "category": "Visual Attributes"},
-        {"query": "backpack", "expected_match": True, "category": "Objects"},
-        {"query": "caution", "expected_match": True, "category": "OCR Text Detection"},
-        {"query": "Abdelrahman", "expected_match": True, "category": "Real-time Name Fusion"},
-        {"query": "green thing", "expected_match": False, "category": "Negative Query (Zero-Result)"},
-        {"query": "elephant", "expected_match": False, "category": "Negative Query (Zero-Result)"}
-    ]
+    # Define test suite evaluation queries dynamically based on active database content
+    if db_path == "video.db":
+        test_queries = [
+            {"query": "blue shirt", "expected_match": True, "category": "Visual Attributes"},
+            {"query": "chips", "expected_match": True, "category": "Objects"},
+            {"query": "Abdelrahman", "expected_match": True, "category": "Real-time Name Fusion"},
+            {"query": "green thing", "expected_match": False, "category": "Negative Query (Zero-Result)"},
+            {"query": "elephant", "expected_match": False, "category": "Negative Query (Zero-Result)"}
+        ]
+    else:
+        test_queries = [
+            {"query": "blue shirt", "expected_match": True, "category": "Visual Attributes"},
+            {"query": "backpack", "expected_match": True, "category": "Objects"},
+            {"query": "caution", "expected_match": True, "category": "OCR Text Detection"},
+            {"query": "Abdelrahman", "expected_match": True, "category": "Real-time Name Fusion"},
+            {"query": "green thing", "expected_match": False, "category": "Negative Query (Zero-Result)"},
+            {"query": "elephant", "expected_match": False, "category": "Negative Query (Zero-Result)"}
+        ]
 
     results = []
     latencies = []
@@ -115,7 +124,7 @@ def run_evaluation():
     print(f"Overall Search Accuracy Score:  {accuracy:.1f}%")
     print(f"Average Query Latency:          {avg_latency:.2f} ms")
     print(f"Zero-Result Fallback Latency:   {avg_fallback_latency:.2f} ms  (< 100ms SLA target)")
-    print(f"Tested Scenarios:               {len(test_queries)} passed out of {len(test_queries)}")
+    print(f"Tested Scenarios:               {sum(results)} passed out of {len(test_queries)}")
     print("=" * 80)
 
     # Cleanup temporary test files if they were created

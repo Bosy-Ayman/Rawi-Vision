@@ -272,8 +272,7 @@ A high-performance vector retrieval file using a flat inner product index.
 * **Index Structure**: `faiss.IndexFlatIP` (Flat Index using Inner Product).
 * **Cosine Similarity Translation**: During indexing, each channel vector is individually $L_2$-normalized. When concatenated and further normalized, the inner product calculation $\langle q, v \rangle$ yields the exact cosine similarity score ($0.0$ to $1.0$).
 * **1152-Dimensional Vector Channel Map**:
-* 
-  $$\text{Embedding Vector} = [\text{Objects  OCR (384-dim)} \mid \text{Visual Semantics (384-dim)} \mid \text{Kinetic Motion (384-dim)}]$$
+  $$\text{Embedding Vector} = [\text{Objects & OCR (384-dim)} \mid \text{Visual Semantics (384-dim)} \mid \text{Kinetic Motion (384-dim)}]$$
   * **Objects & OCR Channel (Dims 0–383)**: Embeds the object string representation (`"Objects: person, backpack | OCR: LAYS, CAUTION"`).
   * **Visual Semantics Channel (Dims 384–767)**: Embeds the deep visual descriptive caption.
   * **Kinetic Motion Channel (Dims 768–1151)**: Embeds the optical flow kinetic profile description (`"Motion: slow movements leftwards"`).
@@ -318,6 +317,47 @@ timestamp,event,track_id,name,distance,detail
 ```
 
 ---
+
+#### 5. Online Search Output API JSON Schema
+The structural schema returned by the search engine interface for developer integration.
+
+```json
+{
+  "query": "Abdelrahman",
+  "total_results": 1,
+  "results": [
+    {
+      "frame_id": 480,
+      "timestamp": 16.0,
+      "description": "A person wearing a blue shirt is standing in the store aisle. | Objects: person, backpack | Motion: slow movements leftwards | OCR: LAYS, CAUTION [Real-time Identity: Abdelrahman (Track 1)]",
+      "similarity": 48.4,
+      "clip_path": "extracted_clips/clip_frame_480_16.00s.mp4",
+      "track_ids": [1, 2]
+    }
+  ],
+  "reid_tracks": {
+    "Track 1": [
+      {
+        "frame_id": 480,
+        "timestamp": 16.0
+      }
+    ]
+  },
+  "realtime_events": [
+    {
+      "timestamp": "2026-05-19 18:22:55.789",
+      "event": "FACE_IDENTIFIED",
+      "track_id": "1",
+      "name": "Abdelrahman",
+      "distance": "0.3456",
+      "detail": ""
+    }
+  ],
+  "llm_answer": "Abdelrahman (Track 1) is visible in the aisle standing near products.",
+  "note": "Similarity scores are percentages (0-100). Scores above 20% indicate potential matches."
+}
+```
+
 ---
 
 ## ⚙️ Windows Memory & Stability Optimizations
