@@ -272,7 +272,8 @@ A high-performance vector retrieval file using a flat inner product index.
 * **Index Structure**: `faiss.IndexFlatIP` (Flat Index using Inner Product).
 * **Cosine Similarity Translation**: During indexing, each channel vector is individually $L_2$-normalized. When concatenated and further normalized, the inner product calculation $\langle q, v \rangle$ yields the exact cosine similarity score ($0.0$ to $1.0$).
 * **1152-Dimensional Vector Channel Map**:
-  $$\text{Embedding Vector} = [\text{Objects & OCR (384-dim)} \mid \text{Visual Semantics (384-dim)} \mid \text{Kinetic Motion (384-dim)}]$$
+* 
+  $$\text{Embedding Vector} = [\text{Objects  OCR (384-dim)} \mid \text{Visual Semantics (384-dim)} \mid \text{Kinetic Motion (384-dim)}]$$
   * **Objects & OCR Channel (Dims 0–383)**: Embeds the object string representation (`"Objects: person, backpack | OCR: LAYS, CAUTION"`).
   * **Visual Semantics Channel (Dims 384–767)**: Embeds the deep visual descriptive caption.
   * **Kinetic Motion Channel (Dims 768–1151)**: Embeds the optical flow kinetic profile description (`"Motion: slow movements leftwards"`).
