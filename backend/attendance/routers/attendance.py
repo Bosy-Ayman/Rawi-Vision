@@ -7,7 +7,13 @@ from database import db_dependency
 from database import get_db
 from uuid import UUID
 
-attendance_router = APIRouter(prefix= "/attendance", tags=["attendance"])
+from subscription.dependencies import verify_feature_access
+
+attendance_router = APIRouter(
+    prefix= "/attendance", 
+    tags=["attendance"],
+    dependencies=[Depends(verify_feature_access("attendance"))]
+)
 
 def get_attendance_repository(db: AsyncSession=Depends(get_db)):
     return AttendanceRepository(db=db)

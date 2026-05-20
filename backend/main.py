@@ -15,6 +15,7 @@ from camera_ingestion.routers.ingestion import ingestion_router
 from camera_ingestion.routers.stream import stream_router
 from attendance.routers.attendance import attendance_router
 from subscription.routers.subscription import subscription_router
+from subscription.models.license import LicenseInfo
 
 from database import get_db
 from minio import Minio
