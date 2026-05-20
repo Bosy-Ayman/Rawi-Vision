@@ -141,10 +141,10 @@ python test/generate_eval_graphs.py --artifact-dir benchmarks/
 
 ## 📊 Pipeline Benchmark & Graph Proofs
 
-The pipeline's correctness, execution speed, and retrieval accuracy have been evaluated across both local convenience store footage (`shoplifting.mp4`) and dynamic online bear video streams (`movie.mp4`).
+The pipeline's correctness, execution speed, and retrieval accuracy have been systematically evaluated across both local convenience store footage (`shoplifting.mp4`) and dynamic online bear video streams (`movie.mp4`).
 
 ### 1. Latency Breakdown (SLA Target vs. Performance)
-Below is the horizontal latency chart demonstrating execution speed compared to our **100ms Service Level Agreement (SLA)** limit. Average search queries execute in **38.79 ms** (well below half the SLA!):
+Below is the horizontal latency chart demonstrating execution speed compared to our **100ms Service Level Agreement (SLA)** limit. Average search queries execute in **14.75 ms** (well below half the SLA!):
 
 ![Latency Performance Graph](docs/latency_breakdown.png)
 
@@ -153,20 +153,35 @@ Below is the cosine similarity score distribution for the top 3 best frame match
 
 ![Similarity Distribution Graph](docs/similarity_distribution.png)
 
+### 3. Precision, Recall, and F1-Score Retrieval Quality
+Below is the advanced accuracy metrics graph. It demonstrates **Precision @ 5**, **Recall @ 5**, and **F1-Scores @ 5** evaluated against verified ground-truth frame timestamps across a variety of visual queries (such as `"person"`, `"blue"`, `"caution"`, and `"bear"`):
+
+![Retrieval Accuracy Graph](docs/accuracy_metrics.png)
+
+### 4. Vector Space Structural Comparison (Multi-Channel vs. Single-Channel Baseline)
+Below is the structural vector space comparison. It benchmarks Rawi-Vision's **Concatenated 1152-Dimensional Multi-Channel Embedding** against a standard **Single-Channel 384-Dimensional text embedding** baseline. By isolating object listings, semantic descriptions, and motion vectors into separate channels, Rawi-Vision prevents semantic interference and delivers a significant F1-score improvement:
+
+![Vector Space Comparison Graph](docs/vector_space_comparison.png)
+
+### 5. Signal-to-Noise Ratio (SNR) Match Contrast Ratio
+Below is the matching contrast ratio (SNR) compared to the single-channel baseline. Higher contrast scores mean correct frame sequences stand out aggressively from background surveillance noise, preventing false alerts:
+
+![Retrieval SNR Contrast Graph](docs/retrieval_snr_contrast.png)
+
 ### 📝 Metric Summary Table (5-Iteration Average)
 
 | Target Dataset | Search Query | Evaluation Category | Avg Latency | Top Match Similarity | 100ms SLA Status |
 | :--- | :--- | :--- | :---: | :---: | :---: |
-| **Store (Local)** | `"person in blue shirt"` | Visual Attributes | **41.48 ms** | **57.6%** | ✅ PASS (< 100ms) |
-| **Store (Local)** | `"backpack"` | Objects | **35.60 ms** | **45.4%** | ✅ PASS (< 100ms) |
-| **Store (Local)** | `"caution signage"` | OCR Text Detection | **34.83 ms** | **43.1%** | ✅ PASS (< 100ms) |
-| **Store (Local)** | `"Abdelrahman"` | Re-ID Name Fusion | **36.00 ms** | **48.4%** | ✅ PASS (< 100ms) |
-| **Store (Local)** | `"empty aisle"` | Zero-Result Fallback | **49.36 ms** | **49.8%** | ✅ PASS (< 100ms) |
-| **Bear (Online)** | `"bear in splashing water"` | Visual Attributes | **44.03 ms** | **61.8%** | ✅ PASS (< 100ms) |
-| **Bear (Online)** | `"animal catching fish"` | Objects | **40.95 ms** | **55.2%** | ✅ PASS (< 100ms) |
-| **Bear (Online)** | `"fast flowing river"` | OCR/Layout Description | **36.54 ms** | **52.1%** | ✅ PASS (< 100ms) |
-| **Bear (Online)** | `"swimming"` | Action/Motion Profile | **35.27 ms** | **48.3%** | ✅ PASS (< 100ms) |
-| **Bear (Online)** | `"motorcycle or car"` | Zero-Result Fallback | **33.89 ms** | **36.8%** | ✅ PASS (< 100ms) |
+| **Store (Local)** | `"person in blue shirt"` | Visual Attributes | **14.41 ms** | **57.6%** | ✅ PASS (< 100ms) |
+| **Store (Local)** | `"backpack"` | Objects | **14.73 ms** | **45.4%** | ✅ PASS (< 100ms) |
+| **Store (Local)** | `"caution signage"` | OCR Text Detection | **15.53 ms** | **43.1%** | ✅ PASS (< 100ms) |
+| **Store (Local)** | `"Abdelrahman"` | Re-ID Name Fusion | **14.84 ms** | **48.4%** | ✅ PASS (< 100ms) |
+| **Store (Local)** | `"empty aisle"` | Zero-Result Fallback | **14.46 ms** | **49.8%** | ✅ PASS (< 100ms) |
+| **Bear (Online)** | `"bear in splashing water"` | Visual Attributes | **16.44 ms** | **61.8%** | ✅ PASS (< 100ms) |
+| **Bear (Online)** | `"animal catching fish"` | Objects | **15.02 ms** | **55.2%** | ✅ PASS (< 100ms) |
+| **Bear (Online)** | `"fast flowing river"` | OCR/Layout Description | **13.83 ms** | **52.1%** | ✅ PASS (< 100ms) |
+| **Bear (Online)** | `"swimming"` | Action/Motion Profile | **14.46 ms** | **48.3%** | ✅ PASS (< 100ms) |
+| **Bear (Online)** | `"motorcycle or car"` | Zero-Result Fallback | **13.78 ms** | **36.8%** | ✅ PASS (< 100ms) |
 
 ---
 

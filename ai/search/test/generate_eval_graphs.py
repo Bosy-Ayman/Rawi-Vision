@@ -224,3 +224,10 @@ if __name__ == "__main__":
     parser.add_argument("--artifact-dir", required=True, help="Directory to save generated visual graphs")
     args = parser.parse_args()
     generate_graphs(args.artifact_dir)
+    
+    # Automatically run systematic accuracy, baseline comparison, and SNR contrast benchmarks
+    try:
+        from test.run_systematic_evaluation import run_systematic_benchmark
+        run_systematic_benchmark(args.artifact_dir)
+    except Exception as e:
+        print(f"[WARN] Failed to run systematic evaluation integration: {e}")
