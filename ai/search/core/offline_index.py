@@ -125,7 +125,7 @@ class FAISSIdx:
 # ----------------------------------------------------------------------
 
 class FrameEncoder:
-    def __init__(self, use_vlm: bool = True):
+    def __init__(self, use_vlm: bool = False):
         # 1. Load VLM first when memory is completely fresh and unfragmented
         self.vlm = None
         self.vlm_proc = None
@@ -281,6 +281,36 @@ class FrameEncoder:
 
     def encode_frame(self, frame_bgr: np.ndarray,
                      prev_frame_bgr: Optional[np.ndarray] = None) -> Tuple[np.ndarray, str, List[int]]:
+        try:
+            return self._encode_frame_internal(frame_bgr, prev_frame_bgr)
+        except RuntimeError as e:
+            if "CUDA error" in str(e) or "out of memory" in str(e).lower():
+                print(f"[WARN] CUDA error or out-of-memory detected during execution: {e}")
+                print("[INFO] Dynamically falling back all neural models to CPU for self-healing stability...")
+                try:
+                    self.yolo_model = self.yolo_model.to("cpu")
+                except Exception:
+                    pass
+                try:
+                    self.emb_model = self.emb_model.to("cpu")
+                except Exception:
+                    pass
+                if getattr(self, "ocr_reader", None) is not None:
+                    try:
+                        self.ocr_reader = easyocr.Reader(['en'], gpu=False)
+                    except Exception:
+                        self.ocr_reader = None
+                if getattr(self, "vlm", None) is not None:
+                    try:
+                        self.vlm = self.vlm.to("cpu")
+                    except Exception:
+                        pass
+                print("[INFO] Retrying frame encoding on CPU device...")
+                return self._encode_frame_internal(frame_bgr, prev_frame_bgr)
+            raise e
+
+    def _encode_frame_internal(self, frame_bgr: np.ndarray,
+                               prev_frame_bgr: Optional[np.ndarray] = None) -> Tuple[np.ndarray, str, List[int]]:
         # Tracks
         track_ids = self.track_subjects(frame_bgr)
 
@@ -325,7 +355,7 @@ class FrameEncoder:
 
 def index_video(source: str, sampling: int = 16, db_path: str = "video.db",
                 faiss_path: str = "video.faiss", map_path: str = "video.json",
-                use_vlm: bool = True):
+                use_vlm: bool = False):
     # Resolve output paths to data/ subfolder dynamically
     def resolve_output_path(filename: str) -> str:
         if Path(filename).is_absolute():
@@ -405,9 +435,9 @@ if __name__ == "__main__":
     parser.add_argument("--db", default="video.db")
     parser.add_argument("--faiss", default="video.faiss")
     parser.add_argument("--map", default="video.json")
-    parser.add_argument("--no-vlm", action="store_true",
-                        help="Disable VLM captioning (use YOLO+OCR fallback only). Recommended on Windows with limited page file.")
+    parser.add_argument("--use-vlm", action="store_true",
+                        help="Enable HuggingFace SmolVLM visual captioning. Warning: Requires ~6GB of VRAM and may crash on pagefile-constrained systems.")
     args = parser.parse_args()
 
     index_video(args.source, args.sampling, args.db, args.faiss, args.map,
-                use_vlm=not args.no_vlm)
+                use_vlm=args.use_vlm)

@@ -118,7 +118,6 @@ def index_video(tc: dict) -> bool:
         "--db",    tc["db"],
         "--faiss", tc["faiss"],
         "--map",   tc["map"],
-        "--no-vlm",   # disable VLM to avoid Windows page-file crash
     ]
     t0 = time.time()
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
