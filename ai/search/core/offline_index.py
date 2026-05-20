@@ -323,8 +323,9 @@ class FrameEncoder:
 # Main indexing loop
 # ----------------------------------------------------------------------
 
-def index_video(source: str, sampling: int, db_path="video.db",
-                faiss_path="video.faiss", map_path="video.json"):
+def index_video(source: str, sampling: int = 16, db_path: str = "video.db",
+                faiss_path: str = "video.faiss", map_path: str = "video.json",
+                use_vlm: bool = True):
     # Resolve output paths to data/ subfolder dynamically
     def resolve_output_path(filename: str) -> str:
         if Path(filename).is_absolute():
@@ -345,7 +346,7 @@ def index_video(source: str, sampling: int, db_path="video.db",
 
     db = VideoDB(resolved_db)
     faiss_idx = FAISSIdx(resolved_faiss, resolved_map)
-    encoder = FrameEncoder(use_vlm=True)
+    encoder = FrameEncoder(use_vlm=use_vlm)
 
     if source == "0":
         cap = cv2.VideoCapture(0)
@@ -404,6 +405,9 @@ if __name__ == "__main__":
     parser.add_argument("--db", default="video.db")
     parser.add_argument("--faiss", default="video.faiss")
     parser.add_argument("--map", default="video.json")
+    parser.add_argument("--no-vlm", action="store_true",
+                        help="Disable VLM captioning (use YOLO+OCR fallback only). Recommended on Windows with limited page file.")
     args = parser.parse_args()
 
-    index_video(args.source, args.sampling, args.db, args.faiss, args.map)
+    index_video(args.source, args.sampling, args.db, args.faiss, args.map,
+                use_vlm=not args.no_vlm)
