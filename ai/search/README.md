@@ -317,47 +317,6 @@ timestamp,event,track_id,name,distance,detail
 ```
 
 ---
-
-#### 5. Online Search Output API JSON Schema
-The structural schema returned by the search engine interface for developer integration.
-
-```json
-{
-  "query": "Abdelrahman",
-  "total_results": 1,
-  "results": [
-    {
-      "frame_id": 480,
-      "timestamp": 16.0,
-      "description": "A person wearing a blue shirt is standing in the store aisle. | Objects: person, backpack | Motion: slow movements leftwards | OCR: LAYS, CAUTION [Real-time Identity: Abdelrahman (Track 1)]",
-      "similarity": 48.4,
-      "clip_path": "extracted_clips/clip_frame_480_16.00s.mp4",
-      "track_ids": [1, 2]
-    }
-  ],
-  "reid_tracks": {
-    "Track 1": [
-      {
-        "frame_id": 480,
-        "timestamp": 16.0
-      }
-    ]
-  },
-  "realtime_events": [
-    {
-      "timestamp": "2026-05-19 18:22:55.789",
-      "event": "FACE_IDENTIFIED",
-      "track_id": "1",
-      "name": "Abdelrahman",
-      "distance": "0.3456",
-      "detail": ""
-    }
-  ],
-  "llm_answer": "Abdelrahman (Track 1) is visible in the aisle standing near products.",
-  "note": "Similarity scores are percentages (0-100). Scores above 20% indicate potential matches."
-}
-```
-
 ---
 
 ## ⚙️ Windows Memory & Stability Optimizations
