@@ -368,7 +368,8 @@ class VideoSearchService:
 
     def search(self, query: str, top_k: int = 10, use_llm: bool = True,
                video_path: Optional[str] = None, extract_clips: bool = True,
-               clip_duration: float = 6.0, clips_dir: str = "extracted_clips") -> dict:
+               clip_duration: float = 6.0, clips_dir: str = "extracted_clips",
+               start_time: Optional[float] = None, end_time: Optional[float] = None) -> dict:
         # Auto-detect video path if not explicitly provided and clip extraction is requested
         if extract_clips and not video_path:
             # Look in videos/ folder first
@@ -401,14 +402,22 @@ class VideoSearchService:
                         matched_rt_names.add(row.get("name"))
 
         query_emb = self.encoder.encode(query)
-        matches = self.faiss.search(query_emb, top_k)
+        search_top_k = top_k if (start_time is None and end_time is None) else max(top_k * 5, 100)
+        matches = self.faiss.search(query_emb, search_top_k)
 
         # 1. Fetch matching frames first and enrich them with real-time identities
         matched_frames = []
         descriptions = []
         for fid, sim in matches:
+            if len(matched_frames) >= top_k:
+                break
             frame = self.db.get(fid)
             if frame:
+                # Apply temporal filtering
+                if start_time is not None and frame.timestamp < start_time:
+                    continue
+                if end_time is not None and frame.timestamp > end_time:
+                    continue
                 frame_track_ids = [int(t) for t in frame.tracks.split(",") if t.strip()] if getattr(frame, "tracks", None) else []
                 is_name_match = any(t in matched_rt_tracks for t in frame_track_ids)
                 
@@ -537,32 +546,42 @@ class VideoSearchService:
 # ----------------------------------------------------------------------
 
 def main():
-    import sys
-    if len(sys.argv) < 2:
-        print("Usage: python online_search.py <query>")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description="Online video search engine")
+    parser.add_argument("query", help="Search query")
+    parser.add_argument("--db", default="video.db", help="Path to SQLite database")
+    parser.add_argument("--faiss", default="video.faiss", help="Path to FAISS index")
+    parser.add_argument("--map", default="video.json", help="Path to map JSON")
+    parser.add_argument("--from-time", type=float, default=None, help="Start timestamp in seconds")
+    parser.add_argument("--to-time", type=float, default=None, help="End timestamp in seconds")
+    parser.add_argument("--top-k", type=int, default=10, help="Number of results to return")
+    parser.add_argument("--no-llm", action="store_true", help="Disable LLM reasoning")
+    parser.add_argument("--no-clips", action="store_true", help="Disable clip extraction")
+    args = parser.parse_args()
     
-    query = sys.argv[1]
-    print(f"[INFO] Initializing video search for query: '{query}'...")
+    print(f"[INFO] Initializing video search for query: '{args.query}'...")
+    if args.from_time is not None or args.to_time is not None:
+        print(f"[INFO] Temporal filter: from={args.from_time}s to={args.to_time}s")
     
     # Initialize service with default smart parameters (use Qwen-0.5B for fast, highly accurate local CPU reasoning)
     service = VideoSearchService(
-        db_path="video.db",
-        faiss_path="video.faiss",
-        map_path="video.json",
-        use_llm=True,
+        db_path=args.db,
+        faiss_path=args.faiss,
+        map_path=args.map,
+        use_llm=not args.no_llm,
         llm_model_name="Qwen/Qwen2.5-0.5B-Instruct"
     )
     
     # Search and automatically detect video, extract clips, and run LLM summarization
     result = service.search(
-        query=query,
-        top_k=10,
-        use_llm=True,
+        query=args.query,
+        top_k=args.top_k,
+        use_llm=not args.no_llm,
         video_path=None,
-        extract_clips=True,
+        extract_clips=not args.no_clips,
         clip_duration=6.0,
-        clips_dir="extracted_clips"
+        clips_dir="extracted_clips",
+        start_time=args.from_time,
+        end_time=args.to_time
     )
     
     print("\n--- SEARCH RESULTS ---")
