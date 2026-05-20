@@ -185,6 +185,54 @@ Below is the matching contrast ratio (SNR) compared to the single-channel baseli
 
 ---
 
+## 🗃️ Input, Output, Database & OS Specifications
+
+This section defines the dynamic inputs, outputs, operating system compatibility, and database column schemas governing **Rawi-Vision**.
+
+### 💻 OS & Platform Configuration
+* **Primary Target OS**: Windows (tested with standard CPU/GPU libraries), fully compatible with Linux.
+* **Path Resolution**: Relative directory checkouts (`data/`, `../data/`, `backend/events.csv`) are dynamically resolved based on execution context to ensure platform portability.
+
+### 🔄 In/Out Data Contracts & Datasets
+
+| Component / Utility | File / Database Type | Primary Inputs | Primary Outputs & Data Schema |
+| :--- | :--- | :--- | :--- |
+| **Offline Video Indexer** (`offline_index.py`) | Video Stream / SQLite / FAISS / JSON | <ul><li>Video file path or webcam index (`"0"`)</li><li>`--sampling N` (int, default: 16)</li></ul> | <ul><li>`video.db` (SQLite relational database)</li><li>`video.faiss` (FAISS vector database)</li><li>`video.json` (ID mapping)</li></ul> |
+| **Online Search Engine** (`online_search.py`) | CLI Query / RAG / Clip Slicer | <ul><li>`query` (string)</li><li>`--from-time` & `--to-time` (float range)</li><li>`--top-k` (int, default: 10)</li></ul> | <ul><li>JSON response output</li><li>Video sub-clips (`extracted_clips/*.mp4`)</li><li>Local LLM natural language answer (text)</li></ul> |
+| **Identity Tracker Registry** (`events.csv`) | CSV File | Face detection and camera tracking streams | `events.csv` structure:<br/>`[timestamp, event, track_id, name, distance, detail]` |
+
+### 🗄️ Database Tables & Column Schemas
+
+#### 1. SQLite Database (`video.db`)
+Stores dense text metadata, calculated frame timestamps, and continuous YOLO object tracking indices.
+
+| Table Name | Column Name | SQLite Data Type | Description & Purpose |
+| :--- | :--- | :--- | :--- |
+| **`frames`** | `frame_id` | `INTEGER` (PRIMARY KEY) | Unique sequential index of the frame. |
+| | `timestamp` | `REAL` | Exact timestamp in seconds from video start. |
+| | `description` | `TEXT` | Fused visual caption, detected YOLO classes, EasyOCR on-screen words, and Farneback kinetic motion vectors. |
+| | `tracks` | `TEXT` | Comma-separated list of active subject track IDs (e.g., `"1,2"`). |
+
+#### 2. FAISS Vector Database (`video.faiss`)
+An ultra-fast dense similarity indexing space.
+
+* **Index Type**: `faiss.IndexFlatIP` (Flat Inner Product for Cosine Similarity search).
+* **Vector Dimension**: **1152 dimensions** (concatenation of three 384-dimensional $L_2$-normalized vectors: Objects/OCR + Visual Semantics + Kinetic Motion).
+
+#### 3. Index Mapping File (`video.json`)
+Maps sequential FAISS array coordinates to SQLite primary keys.
+
+* **Format**: Standard JSON dictionary where the string representation of the FAISS sequential array index maps directly to the SQLite `frame_id`:
+  ```json
+  {
+    "0": 16,
+    "1": 32,
+    "2": 48
+  }
+  ```
+
+---
+
 ## ⚙️ Windows Memory & Stability Optimizations
 
 To support heavy vision-language reasoning on Windows workstations with standard host memory sizes, the system implements critical safety features:
