@@ -5,7 +5,7 @@ import LandingPage from './pages/LandingPage';
 import VideoFeedPage from './pages/VideoFeed';
 import SmartSearch from './pages/SmartSearch';
 import Anomalies from './pages/Anomalies';
-import EmployeeInsights from './pages/EmployeeInsights';
+import Clips from './pages/Clips';
 import EmployeeOnboarding from './pages/EmployeeOnboarding';
 import AllEmployees from './pages/AllEmployees';
 import EmployeeDetails from './pages/EmployeeDetails';
@@ -30,7 +30,7 @@ function App() {
           <Route path="/dashboard/video-feed" element={<VideoFeedPage />} />
           <Route path="/dashboard/smart-search" element={<SmartSearch />} />
           <Route path="/dashboard/anomalies" element={<Anomalies />} />
-          <Route path="/dashboard/employee-insights" element={<EmployeeInsights />} />
+          <Route path="/dashboard/clips" element={<Clips />} />
           <Route path="/dashboard/employee-onboarding" element={<EmployeeOnboarding />} />
           <Route path="/dashboard/all-employees" element={<AllEmployees />} />
           <Route path="/dashboard/employee/:id" element={<EmployeeDetails />} />

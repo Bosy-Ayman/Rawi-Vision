@@ -1,0 +1,105 @@
+.clips-container {
+    padding: 24px;
+}
+
+.clips-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.clips-header p {
+    color: #64748b;
+    margin: 0;
+}
+
+.upload-btn-wrapper {
+    position: relative;
+    overflow: hidden;
+    display: inline-block;
+}
+
+.upload-btn {
+    background-color: #3b82f6;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.upload-btn:hover {
+    background-color: #2563eb;
+}
+
+.upload-btn-wrapper input[type=file] {
+    font-size: 100px;
+    position: absolute;
+    left: 0;
+    top: 0;
+    opacity: 0;
+    cursor: pointer;
+    height: 100%;
+}
+
+.video-status-overlay {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 10;
+}
+
+.status-badge {
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: bold;
+    color: white;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.status-badge.pending { background-color: #f59e0b; }
+.status-badge.indexing { background-color: #3b82f6; }
+.status-badge.completed { background-color: #10b981; }
+.status-badge.failed { background-color: #ef4444; }
+
+.delete-clip-btn {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+
+.delete-clip-btn:hover {
+    opacity: 1;
+}
+
+/* Base styles imported from insights if needed, but assuming they exist globally since EmployeeInsights had no specific CSS import */
+.insights-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 20px;
+}
+.insight-card {
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    border: 1px solid #e2e8f0;
+}
+.insight-image-placeholder {
+    height: 140px;
+    background-color: #f1f5f9;
+    position: relative;
+}
+.insight-content {
+    padding: 16px;
+}

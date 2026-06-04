@@ -1,0 +1,118 @@
+.video-select {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #cbd5e1;
+    background-color: #f8fafc;
+    font-size: 14px;
+    color: #334155;
+    outline: none;
+}
+
+.video-select:focus {
+    border-color: #3b82f6;
+}
+
+.search-error {
+    color: #ef4444;
+    margin-top: 10px;
+    font-size: 14px;
+}
+
+.search-results-container {
+    margin-top: 40px;
+    width: 100%;
+    max-width: 1200px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.llm-answer-box {
+    background-color: #f0fdf4;
+    border-left: 4px solid #22c55e;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 30px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.llm-answer-box h3 {
+    margin-top: 0;
+    color: #166534;
+    font-size: 1.1rem;
+    margin-bottom: 10px;
+}
+
+.llm-answer-box p {
+    color: #15803d;
+    line-height: 1.5;
+    margin: 0;
+}
+
+.results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 24px;
+    margin-top: 20px;
+}
+
+.result-card {
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    border: 1px solid #e2e8f0;
+    display: flex;
+    flex-direction: column;
+}
+
+.result-video {
+    width: 100%;
+    height: 180px;
+    object-fit: cover;
+    background-color: #000;
+}
+
+.no-video-placeholder {
+    width: 100%;
+    height: 180px;
+    background-color: #f1f5f9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+    font-style: italic;
+}
+
+.result-info {
+    padding: 16px;
+    position: relative;
+    flex: 1;
+}
+
+.similarity-badge {
+    background-color: #3b82f6;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: bold;
+    display: inline-block;
+    margin-bottom: 8px;
+    margin-right: 8px;
+}
+
+.timestamp-badge {
+    display: inline-block;
+    color: #64748b;
+    font-size: 0.8rem;
+    font-weight: 500;
+    margin: 0;
+}
+
+.result-desc {
+    font-size: 0.85rem;
+    color: #475569;
+    margin-top: 12px;
+    line-height: 1.4;
+}

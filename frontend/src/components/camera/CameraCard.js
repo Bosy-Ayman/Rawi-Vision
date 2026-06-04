@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { BASE_URL } from '../../api/client';
+import { searchAPI } from '../../api/search';
 
 const WS_BASE = BASE_URL.replace(/^http/, 'ws') + '/stream';
 const MAX_RECONNECT_ATTEMPTS = 5;
@@ -15,7 +16,58 @@ const CameraCard = ({ camera }) => {
     const [isError, setIsError] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
+    
+    // Recording state
+    const [isRecording, setIsRecording] = useState(false);
+    const [recordingChunks, setRecordingChunks] = useState(0);
+    const [isActionLoading, setIsActionLoading] = useState(false);
+
     const cardRef = useRef(null);
+
+    // Poll recording status if recording
+    useEffect(() => {
+        let interval;
+        if (isRecording && camera.id) {
+            interval = setInterval(async () => {
+                try {
+                    const status = await searchAPI.getRecordingStatus(camera.id);
+                    if (status.status === 'recording') {
+                        setRecordingChunks(status.chunks_recorded || 0);
+                    } else if (status.status === 'not_found' || status.status === 'completed' || status.status === 'failed') {
+                        setIsRecording(false);
+                        clearInterval(interval);
+                    }
+                } catch (err) {
+                    console.error("Failed to poll recording status", err);
+                }
+            }, 5000);
+        }
+        return () => clearInterval(interval);
+    }, [isRecording, camera.id]);
+
+    const handleRecordToggle = async () => {
+        if (!camera.id) {
+            alert("No camera ID found.");
+            return;
+        }
+        setIsActionLoading(true);
+        try {
+            if (isRecording) {
+                await searchAPI.stopRecording(camera.id);
+                setIsRecording(false);
+                alert("Recording stop signal sent. It will finish the current chunk.");
+            } else {
+                await searchAPI.startRecording(camera.id, 600, 60); // Record for 10 mins, chunk 60s
+                setIsRecording(true);
+                setRecordingChunks(0);
+            }
+        } catch (err) {
+            console.error("Recording action failed", err);
+            alert(err.detail || "Failed to toggle recording.");
+        } finally {
+            setIsActionLoading(false);
+        }
+    };
 
     const connectWebSocket = () => {
         if (!isMountedRef.current) return;
@@ -134,10 +186,17 @@ const CameraCard = ({ camera }) => {
                 </div>
             )}
 
-            <div className={`camera-badge ${getBadgeClass()}`}>
+            <div className={`camera-badge ${getBadgeClass()}`} style={{ display: 'flex', gap: '8px' }}>
                 <span className="badge-dot" />
                 <span className="badge-label">{getBadgeLabel()}</span>
             </div>
+            
+            {isRecording && (
+                <div className="camera-badge" style={{ backgroundColor: '#ef4444', top: '10px', right: '10px', left: 'auto' }}>
+                    <span className="badge-dot" style={{ backgroundColor: 'white' }} />
+                    <span className="badge-label" style={{ color: 'white' }}>REC ({recordingChunks} chunks)</span>
+                </div>
+            )}
 
             <div className="camera-info-bar">
                 <div className="camera-location">
@@ -145,6 +204,15 @@ const CameraCard = ({ camera }) => {
                     <span className="camera-building">{camera.building || 'Building'}</span>
                 </div>
                 <div className="camera-controls">
+                    <button
+                        className="camera-ctrl-btn"
+                        onClick={handleRecordToggle}
+                        disabled={isActionLoading}
+                        title={isRecording ? 'Stop Recording AI' : 'Record & Index AI'}
+                        style={{ color: isRecording ? '#ef4444' : 'inherit', fontWeight: 'bold' }}
+                    >
+                        {isRecording ? '⏹ REC' : '⏺ AI REC'}
+                    </button>
                     <button
                         className="camera-ctrl-btn"
                         onClick={handlePauseToggle}

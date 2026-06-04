@@ -16,5 +16,6 @@ celery_app.autodiscover_tasks([
     "camera_ingestion.celery_tasks.ingestion",
     "camera_ingestion.celery_tasks.face_recognition",
     "employee_onboarding.celery_tasks.embedding.tasks.create_embedding_task",
-    "anomaly.celery_tasks"
+    "anomaly.celery_tasks",
+    "search.celery_tasks"
 ])

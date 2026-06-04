@@ -35,7 +35,7 @@ const Sidebar = () => {
         { name: 'Smart Search', icon: 'smart-search.svg', path: '/dashboard/smart-search' },
         { name: 'Anomalies', icon: 'anomalies.svg', path: '/dashboard/anomalies' },
         { name: 'Dashboard', icon: 'dashboard.svg', path: '/dashboard/main' },
-        { name: 'Employee insights', icon: 'employee-insights.svg', path: '/dashboard/employee-insights' },
+        { name: 'Clips', icon: 'employee-insights.svg', path: '/dashboard/clips' },
         { name: 'Settings', icon: 'settings.svg', path: '/dashboard/settings' }
     ];
 

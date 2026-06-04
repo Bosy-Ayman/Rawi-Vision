@@ -1,0 +1,384 @@
+"""
+FastAPI router for the semantic video search module.
+
+Endpoints:
+    POST   /api/search/upload           — Upload a video + queue indexing task
+    GET    /api/search/status/{video_id} — Check indexing progress
+    POST   /api/search/query            — Run semantic search + LLM reasoning
+    GET    /api/search/videos           — List all indexed videos
+    DELETE /api/search/video/{video_id} — Delete index and MinIO files
+"""
+
+import os
+import uuid
+from io import BytesIO
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from sqlalchemy import delete
+from minio import Minio
+
+from database import get_db, db_dependency
+from config import Config
+from search.models.search import IndexedVideo, VideoFrame
+from search.schemas.search import SearchQueryRequest, SearchQueryResponse, VideoStatusResponse, RecordRequest, RecordingStatusResponse
+from search.services.search_service import SearchService
+from search.celery_tasks.tasks import index_video_task, extract_clip_task, record_and_index_task
+
+search_router = APIRouter(prefix="/api/search", tags=["semantic video search"])
+
+
+# ----------------------------------------------------------------------
+# Dependency: MinIO client
+# ----------------------------------------------------------------------
+
+def get_minio() -> Minio:
+    minio_url = Config.MINIO_SERVER_URL.replace("http://", "").replace("https://", "")
+    return Minio(
+        minio_url,
+        access_key=os.getenv("MINIO_ROOT_USER", "minioadmin"),
+        secret_key=os.getenv("MINIO_ROOT_PASSWORD", "minioadmin"),
+        secure=False
+    )
+
+
+def get_search_service() -> SearchService:
+    return SearchService()
+
+
+# ----------------------------------------------------------------------
+# Endpoint 1: Upload Video & Schedule Indexing
+# ----------------------------------------------------------------------
+
+@search_router.post("/upload", status_code=status.HTTP_202_ACCEPTED)
+async def upload_video(
+    db: db_dependency,
+    file: UploadFile = File(...),
+    camera_id: uuid.UUID = Form(...),
+    sampling_rate: int = Form(16),
+    minio: Minio = Depends(get_minio)
+):
+    """
+    Accepts a video file upload, saves it to MinIO, creates an IndexedVideo
+    record in PostgreSQL with status='pending', then dispatches a Celery
+    background task to index the video frames.
+    """
+    if not file.content_type or "video" not in file.content_type:
+        raise HTTPException(status_code=400, detail="Uploaded file must be a video (mp4, avi, mkv, etc.)")
+
+    video_id = uuid.uuid4()
+    ext = Path(file.filename).suffix if file.filename else ".mp4"
+    storage_path = f"{video_id}{ext}"
+    bucket_name = "camera-archive-videos"
+
+    # Ensure bucket exists
+    if not minio.bucket_exists(bucket_name):
+        minio.make_bucket(bucket_name)
+
+    # Stream upload directly into MinIO without loading entire file into RAM
+    file_bytes = await file.read()
+    minio.put_object(
+        bucket_name=bucket_name,
+        object_name=storage_path,
+        data=BytesIO(file_bytes),
+        length=len(file_bytes),
+        content_type=file.content_type or "video/mp4"
+    )
+
+    # Create DB record
+    indexed_video = IndexedVideo(
+        id=video_id,
+        camera_id=camera_id,
+        storage_path=storage_path,
+        filename=file.filename or f"{video_id}{ext}",
+        status="pending",
+        sampling_rate=sampling_rate
+    )
+    db.add(indexed_video)
+    await db.commit()
+
+    # Dispatch Celery background indexing task
+    index_video_task.delay(str(video_id), storage_path, sampling_rate)
+
+    return {
+        "video_id": str(video_id),
+        "status": "pending",
+        "message": "Video uploaded successfully. Indexing task queued in background."
+    }
+
+
+# ----------------------------------------------------------------------
+# Endpoint 2: Check Indexing Status
+# ----------------------------------------------------------------------
+
+@search_router.get("/status/{video_id}", response_model=VideoStatusResponse)
+async def get_video_status(video_id: uuid.UUID, db: db_dependency):
+    """Returns the current status of a queued or running indexing job."""
+    stmt = select(IndexedVideo).filter(IndexedVideo.id == video_id)
+    result = await db.execute(stmt)
+    video = result.scalar_one_or_none()
+
+    if not video:
+        raise HTTPException(status_code=404, detail=f"Video {video_id} not found.")
+
+    # Count how many frames have been indexed so far
+    count_stmt = select(VideoFrame).filter(VideoFrame.video_id == video_id)
+    count_result = await db.execute(count_stmt)
+    frames_count = len(count_result.scalars().all())
+
+    return VideoStatusResponse(
+        video_id=video.id,
+        filename=video.filename,
+        status=video.status,
+        sampling_rate=video.sampling_rate,
+        date_created=video.date_created,
+    )
+
+
+# ----------------------------------------------------------------------
+# Endpoint 3: Semantic Search Query
+# ----------------------------------------------------------------------
+
+@search_router.post("/query", response_model=SearchQueryResponse)
+async def query_search(
+    request: SearchQueryRequest,
+    db: db_dependency,
+    service: SearchService = Depends(get_search_service)
+):
+    """
+    Performs semantic vector similarity search against indexed frames in PostgreSQL.
+    Fuses biometric identities from events.csv, generates short video clips via Celery,
+    and optionally runs local CPU LLM reasoning to produce a natural language answer.
+    """
+    # Ensure the video is indexed before querying
+    stmt = select(IndexedVideo).filter(IndexedVideo.id == request.video_id)
+    result = await db.execute(stmt)
+    video = result.scalar_one_or_none()
+
+    if not video:
+        raise HTTPException(status_code=404, detail=f"Video {request.video_id} not found.")
+
+    if video.status != "completed":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Video is still being indexed (status='{video.status}'). Please wait until indexing completes."
+        )
+
+    # Run semantic search + identity fusion + LLM reasoning
+    search_result = await service.search(
+        db=db,
+        video_id=request.video_id,
+        query=request.query,
+        top_k=request.top_k,
+        use_llm=request.use_llm
+    )
+
+    # Dispatch async clip extraction tasks for each matched frame
+    # Clips are uploaded to MinIO and presigned URLs are pre-generated
+    for match in search_result["results"]:
+        extract_clip_task.delay(
+            video_id=str(request.video_id),
+            storage_path=video.storage_path,
+            frame_number=match["frame_id"],
+            timestamp_offset=match["timestamp"],
+            clip_duration=6.0
+        )
+
+    return JSONResponse(content={
+        "query": search_result["query"],
+        "total_results": search_result["total_results"],
+        "llm_answer": search_result["llm_answer"],
+        "reid_tracks": search_result["reid_tracks"],
+        "results": search_result["results"]
+    })
+
+
+# ----------------------------------------------------------------------
+# Endpoint 4: List All Indexed Videos
+# ----------------------------------------------------------------------
+
+@search_router.get("/videos")
+async def list_videos(db: db_dependency):
+    """Returns a list of all uploaded and indexed videos with their statuses."""
+    stmt = select(IndexedVideo).order_by(IndexedVideo.date_created.desc())
+    result = await db.execute(stmt)
+    videos = result.scalars().all()
+
+    return [
+        {
+            "video_id": str(v.id),
+            "camera_id": str(v.camera_id),
+            "filename": v.filename,
+            "status": v.status,
+            "sampling_rate": v.sampling_rate,
+            "date_created": v.date_created.isoformat()
+        }
+        for v in videos
+    ]
+
+
+# ----------------------------------------------------------------------
+# Endpoint 5: Delete Video Index
+# ----------------------------------------------------------------------
+
+@search_router.delete("/video/{video_id}", status_code=status.HTTP_200_OK)
+async def delete_video(
+    video_id: uuid.UUID,
+    db: db_dependency,
+    minio: Minio = Depends(get_minio)
+):
+    """
+    Deletes the IndexedVideo record, all associated VideoFrame rows,
+    and removes both the original video and extracted clips from MinIO.
+    """
+    stmt = select(IndexedVideo).filter(IndexedVideo.id == video_id)
+    result = await db.execute(stmt)
+    video = result.scalar_one_or_none()
+
+    if not video:
+        raise HTTPException(status_code=404, detail=f"Video {video_id} not found.")
+
+    # Delete all video frames from DB
+    await db.execute(delete(VideoFrame).filter(VideoFrame.video_id == video_id))
+
+    # Delete original video from MinIO
+    try:
+        minio.remove_object("camera-archive-videos", video.storage_path)
+    except Exception as e:
+        print(f"[WARN] Could not delete video from MinIO: {e}")
+
+    # Delete all extracted clips from MinIO
+    try:
+        clips_prefix = f"extracted_clips/{video_id}/"
+        objects = minio.list_objects("extracted-search-clips", prefix=clips_prefix, recursive=True)
+        for obj in objects:
+            minio.remove_object("extracted-search-clips", obj.object_name)
+    except Exception as e:
+        print(f"[WARN] Could not delete clips from MinIO: {e}")
+
+    # Delete the IndexedVideo record
+    await db.delete(video)
+    await db.commit()
+
+    return {"message": f"Video {video_id} and all associated frames/clips have been deleted."}
+
+
+# ----------------------------------------------------------------------
+# Endpoint 6: Start Recording from Camera (Record & Index)
+# ----------------------------------------------------------------------
+
+@search_router.post("/record/{camera_id}", status_code=status.HTTP_202_ACCEPTED)
+async def start_recording(
+    camera_id: uuid.UUID,
+    request: RecordRequest = RecordRequest()
+):
+    """
+    Starts recording from a camera's RTSP stream in rolling chunks.
+    Each chunk is automatically uploaded to MinIO and queued for indexing.
+
+    The recording runs as a Celery background task and can be stopped
+    early via POST /api/search/record/{camera_id}/stop.
+    """
+    import redis
+    redis_client = redis.Redis(
+        host=os.getenv("REDIS_HOST", "localhost"),
+        port=int(os.getenv("REDIS_PORT", 6379)),
+        db=0,
+        decode_responses=True
+    )
+
+    # Check if already recording this camera
+    status_key = f"recording:status:{camera_id}"
+    existing = redis_client.hgetall(status_key)
+    if existing and existing.get("status") == "recording":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Camera {camera_id} is already being recorded. Stop it first."
+        )
+
+    # Dispatch the Celery background recording task
+    record_and_index_task.delay(
+        camera_id=str(camera_id),
+        duration=request.duration,
+        chunk_size=request.chunk_size,
+        sampling_rate=request.sampling_rate
+    )
+
+    return {
+        "camera_id": str(camera_id),
+        "status": "recording",
+        "duration": request.duration,
+        "chunk_size": request.chunk_size,
+        "message": f"Recording started. Will record {request.duration}s in {request.chunk_size}s chunks."
+    }
+
+
+# ----------------------------------------------------------------------
+# Endpoint 7: Stop Recording
+# ----------------------------------------------------------------------
+
+@search_router.post("/record/{camera_id}/stop")
+async def stop_recording(camera_id: uuid.UUID):
+    """
+    Sends a stop signal to an active recording task for the given camera.
+    The current chunk will finish writing and uploading before the task exits.
+    """
+    import redis
+    redis_client = redis.Redis(
+        host=os.getenv("REDIS_HOST", "localhost"),
+        port=int(os.getenv("REDIS_PORT", 6379)),
+        db=0,
+        decode_responses=True
+    )
+
+    redis_key = f"stop:record:{camera_id}"
+    redis_client.set(redis_key, "1")
+
+    return {
+        "camera_id": str(camera_id),
+        "message": "Stop signal sent. Recording will finish current chunk and stop."
+    }
+
+
+# ----------------------------------------------------------------------
+# Endpoint 8: Check Recording Status
+# ----------------------------------------------------------------------
+
+@search_router.get("/record/{camera_id}/status", response_model=RecordingStatusResponse)
+async def get_recording_status(camera_id: uuid.UUID):
+    """
+    Returns the current status of a recording session for a camera.
+    Status is tracked in Redis and expires 1 hour after completion.
+    """
+    import redis
+    redis_client = redis.Redis(
+        host=os.getenv("REDIS_HOST", "localhost"),
+        port=int(os.getenv("REDIS_PORT", 6379)),
+        db=0,
+        decode_responses=True
+    )
+
+    status_key = f"recording:status:{camera_id}"
+    data = redis_client.hgetall(status_key)
+
+    if not data:
+        return RecordingStatusResponse(
+            camera_id=str(camera_id),
+            status="not_found"
+        )
+
+    return RecordingStatusResponse(
+        camera_id=str(camera_id),
+        status=data.get("status", "unknown"),
+        chunks_recorded=int(data.get("chunks_recorded", 0)),
+        start_time=int(data["start_time"]) if "start_time" in data else None,
+        elapsed_seconds=float(data["elapsed_seconds"]) if "elapsed_seconds" in data else None,
+        error=data.get("error")
+    )
+
+
+# Required for storage_path ext parsing
+from pathlib import Path
