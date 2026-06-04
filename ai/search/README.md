@@ -185,6 +185,181 @@ Below is the matching contrast ratio (SNR) compared to the single-channel baseli
 
 ---
 
+## 🗃️ Input, Output, Database & OS Specifications
+
+This section provides the exhaustive, technical API contract defining the inputs, outputs, operating system integrations, and database schemas governing **Rawi-Vision**.
+
+### 💻 OS & Platform Configuration
+* **Primary Target OS**: Windows (tested with standard CPU/GPU libraries), fully compatible with Linux.
+* **Path Resolution**: Relative directory checkouts (`data/`, `../data/`, `backend/events.csv`) are dynamically resolved based on execution context to ensure platform portability.
+* **Path Resolution Fallback List**:
+  1. `Path("events.csv")` (current working directory)
+  2. `Path("data/events.csv")` (local data subfolder)
+  3. `Path("../data/events.csv")` (parent directory relative context)
+  4. `Path("../backend/events.csv")` (backend relative workspace context)
+  5. `Path("backend/camera_ingestion/ai/events.csv")` (edge camera pipeline directory)
+
+---
+
+### 🔄 Detailed CLI In/Out Data Contracts
+
+#### 1. Offline Video Indexer (`offline_index.py`)
+Processes raw video frames and serializes multi-modal visual embeddings to SQLite and FAISS.
+
+* **CLI Syntax & Arguments**:
+  ```bash
+  python core/offline_index.py <source> [--sampling N] [--db DB_PATH] [--faiss FAISS_PATH] [--map MAP_PATH]
+  ```
+  * `<source>` (Required string): Absolute or relative path to an `.mp4`/`.avi` video file, or `"0"` for live USB webcam streams.
+  * `--sampling` (Optional int, default: `16`): The decimation sampling rate. Processes every $N$-th frame from the OpenCV video capture.
+  * `--db` (Optional string, default: `"video.db"`): Path to write the SQLite relation database.
+  * `--faiss` (Optional string, default: `"video.faiss"`): Path to write the FAISS dense index.
+  * `--map` (Optional string, default: `"video.json"`): Path to write the coordinate-to-primary-key JSON mapping file.
+
+* **Primary Outputs**:
+  * SQLite database (`video.db`) storing tabular frame metadata.
+  * FAISS Index binary (`video.faiss`) containing the unified multi-channel vectors.
+  * Mapping file (`video.json`) mapping array coordinate offsets directly to SQLite IDs.
+
+#### 2. Online Search Engine (`online_search.py`)
+Queries the vectorized indexes with natural text, applies optional temporal range filtering, extracts clip segments, and runs CPU-driven LLM RAG summarization.
+
+* **CLI Syntax & Arguments**:
+  ```bash
+  python core/online_search.py "<query>" [--db DB_PATH] [--faiss FAISS_PATH] [--map MAP_PATH] [--from-time SEC] [--to-time SEC] [--top-k K] [--no-llm] [--no-clips]
+  ```
+  * `"<query>"` (Required string): Natural language query describing visual scenes, text on screen, tracked names, objects, colors, or actions.
+  * `--from-time` (Optional float, default: `None`): Restricts matches to frames with a timestamp $\geq \text{from-time}$ in seconds.
+  * `--to-time` (Optional float, default: `None`): Restricts matches to frames with a timestamp $\leq \text{to-time}$ in seconds.
+  * `--top-k` (Optional int, default: `10`): Max number of matching results to return.
+  * `--no-llm` (Optional flag): Bypasses local CPU-driven LLM reasoning layer to run a pure database search.
+  * `--no-clips` (Optional flag): Disables programmatic sub-clip extraction via OpenCV.
+
+* **Primary Outputs**:
+  * **JSON API Payload**: Full search payload containing frame timelines, multi-subject Re-ID timeline tracking, real-time events, and natural language causal model answers.
+  * **Programmatic Sub-Clips**: Programmatic visual clips written to `extracted_clips/clip_frame_{frame_id}_{timestamp}s.mp4` spanning $\pm 3.0$ seconds around matching frame occurrences.
+
+---
+
+### 🗄️ Database Tables & Column Schemas
+
+#### 1. SQLite Database (`video.db`)
+Consists of the relational `frames` table storing extracted metadata, object trackers, and text logs.
+
+##### **`frames` Table Schema**
+| Column Name | SQLite Data Type | Constraints | Description / Serialized Layout |
+| :--- | :--- | :--- | :--- |
+| **`frame_id`** | `INTEGER` | `PRIMARY KEY` | Unique sequential integer representing the exact frames processed from the video sequence. |
+| **`timestamp`** | `REAL` | `NOT NULL` | The offset in seconds (float) from the beginning of the video sequence where the frame occurred. |
+| **`description`** | `TEXT` | `NOT NULL` | **Multi-Modal Serialization Format**:<br/>`{Visual Scene VLM Description} \| Objects: {YOLO Detected Objects} \| Motion: {Optical Flow kinetic description} \| OCR: {EasyOCR detected word list}` |
+| **`tracks`** | `TEXT` | `NULLABLE` | Comma-separated list of active integer track IDs detected within the frame by the YOLO tracker (e.g., `"1,4,12"`). |
+
+##### **Example Serialized SQLite Record**:
+```sql
+INSERT INTO frames (frame_id, timestamp, description, tracks) VALUES (
+  480,
+  16.0,
+  'A person wearing a blue shirt is standing in the store aisle. | Objects: person, backpack | Motion: slow movements leftwards | OCR: LAYS, CAUTION',
+  '1,2'
+);
+```
+
+---
+
+#### 2. FAISS Vector Database (`video.faiss`)
+A high-performance vector retrieval file using a flat inner product index.
+
+* **Index Structure**: `faiss.IndexFlatIP` (Flat Index using Inner Product).
+* **Cosine Similarity Translation**: During indexing, each channel vector is individually $L_2$-normalized. When concatenated and further normalized, the inner product calculation $\langle q, v \rangle$ yields the exact cosine similarity score ($0.0$ to $1.0$).
+* **1152-Dimensional Vector Channel Map**:
+  $$\text{Embedding Vector} = [\text{Objects  OCR (384-dim)} \mid \text{Visual Semantics (384-dim)} \mid \text{Kinetic Motion (384-dim)}]$$
+  * **Objects & OCR Channel (Dims 0–383)**: Embeds the object string representation (`"Objects: person, backpack | OCR: LAYS, CAUTION"`).
+  * **Visual Semantics Channel (Dims 384–767)**: Embeds the deep visual descriptive caption.
+  * **Kinetic Motion Channel (Dims 768–1151)**: Embeds the optical flow kinetic profile description (`"Motion: slow movements leftwards"`).
+
+---
+
+#### 3. Index Mapping File (`video.json`)
+Bridges the FAISS array positions to the SQLite database's primary keys.
+* **Layout**: A JSON key-value store mapping the positional row index inside the FAISS file (string) to the relational `frame_id` (integer) in `video.db`:
+  ```json
+  {
+    "0": 16,
+    "1": 32,
+    "2": 48,
+    "3": 64
+  }
+  ```
+
+---
+
+#### 4. Real-Time Identity Tracker Registry (`events.csv`)
+An ingestion registry mapping physical camera tracks to biometric identities.
+
+* **CSV Columns**:
+  1. `timestamp` (String): ISO-8601 or standard datetime log representation (`"2026-05-19 18:22:55.789"`).
+  2. `event` (String): Standard system event code:
+     * `PIPELINE_START`: System initialization log.
+     * `PERSON_ENTERED`: Track index registration.
+     * `FACE_IDENTIFIED`: Biometric recognition match.
+     * `PERSON_LEFT`: Subject departure.
+  3. `track_id` (String): Continuous tracker integer ID from YOLO/ByteTrack.
+  4. `name` (String): Verified name identity associated with the face registry (e.g., `"Abdelrahman"`).
+  5. `distance` (String): Biometric Euclidean match distance threshold (lower is more accurate).
+  6. `detail` (String): Informational metadata.
+
+##### **Example Registry Log**:
+```csv
+timestamp,event,track_id,name,distance,detail
+2026-05-19 18:22:52.456,PERSON_ENTERED,1,,,
+2026-05-19 18:22:55.789,FACE_IDENTIFIED,1,Abdelrahman,0.3456,
+2026-05-19 18:24:12.345,PERSON_LEFT,1,Abdelrahman,,age=450_frames
+```
+
+---
+
+#### 5. Online Search Output API JSON Schema
+The structural schema returned by the search engine interface for developer integration.
+
+```json
+{
+  "query": "Abdelrahman",
+  "total_results": 1,
+  "results": [
+    {
+      "frame_id": 480,
+      "timestamp": 16.0,
+      "description": "A person wearing a blue shirt is standing in the store aisle. | Objects: person, backpack | Motion: slow movements leftwards | OCR: LAYS, CAUTION [Real-time Identity: Abdelrahman (Track 1)]",
+      "similarity": 48.4,
+      "clip_path": "extracted_clips/clip_frame_480_16.00s.mp4",
+      "track_ids": [1, 2]
+    }
+  ],
+  "reid_tracks": {
+    "Track 1": [
+      {
+        "frame_id": 480,
+        "timestamp": 16.0
+      }
+    ]
+  },
+  "realtime_events": [
+    {
+      "timestamp": "2026-05-19 18:22:55.789",
+      "event": "FACE_IDENTIFIED",
+      "track_id": "1",
+      "name": "Abdelrahman",
+      "distance": "0.3456",
+      "detail": ""
+    }
+  ],
+  "llm_answer": "Abdelrahman (Track 1) is visible in the aisle standing near products.",
+  "note": "Similarity scores are percentages (0-100). Scores above 20% indicate potential matches."
+}
+```
+
+---
+
 ## ⚙️ Windows Memory & Stability Optimizations
 
 To support heavy vision-language reasoning on Windows workstations with standard host memory sizes, the system implements critical safety features:

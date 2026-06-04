@@ -185,6 +185,97 @@ def test_realtime_events_fusion():
                     print(f"[WARN] Cleanup failed for {p}: {e}")
 
     return success
+def test_temporal_filtering():
+    print_header("Test 3: Temporal Range Filtering (From & To Timestamps)")
+    if not IMPORTS_OK:
+        print("[SKIP] Imports failed, skipping temporal filtering test.")
+        return False
+
+    db_path = "test_temporal.db"
+    faiss_path = "test_temporal.faiss"
+    map_path = "test_temporal.json"
+
+    print(f"[INFO] Setting up mock temporal database: '{db_path}'...")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DROP TABLE IF EXISTS frames")
+        conn.execute("""
+            CREATE TABLE frames (
+                frame_id INTEGER PRIMARY KEY,
+                timestamp REAL,
+                description TEXT,
+                tracks TEXT
+            )
+        """)
+        # Insert 3 frames at different times
+        conn.execute("INSERT INTO frames VALUES (?, ?, ?, ?)", (10, 2.0, "Person standing near counter. | Objects: person", ""))
+        conn.execute("INSERT INTO frames VALUES (?, ?, ?, ?)", (20, 5.0, "Person holding a phone. | Objects: person", ""))
+        conn.execute("INSERT INTO frames VALUES (?, ?, ?, ?)", (30, 8.0, "Person leaving the shop. | Objects: person", ""))
+        conn.commit()
+
+    # Create dummy FAISS index containing 3 dummy vectors of 1152 dimensions
+    import faiss
+    index = faiss.IndexFlatIP(1152)
+    # Generate 3 similar vectors
+    dummy_vectors = np.random.randn(3, 1152).astype(np.float32)
+    for i in range(3):
+        dummy_vectors[i] = dummy_vectors[i] / np.linalg.norm(dummy_vectors[i])
+    index.add(dummy_vectors)
+    faiss.write_index(index, faiss_path)
+
+    # Save mapping json
+    with open(map_path, "w") as f:
+        json.dump({"0": 10, "1": 20, "2": 30}, f)
+
+    success = True
+    try:
+        service = VideoSearchService(
+            db_path=db_path,
+            faiss_path=faiss_path,
+            map_path=map_path,
+            use_llm=False
+        )
+
+        # Case 1: Filter start_time=3.0, end_time=7.0 -> Should only return frame_id=20 (timestamp 5.0)
+        res1 = service.search("person", top_k=5, use_llm=False, extract_clips=False, start_time=3.0, end_time=7.0)
+        results1_ids = [r["frame_id"] for r in res1.get("results", [])]
+        print(f"[TEST] Case 1 (3s-7s) Results frame_ids: {results1_ids}")
+        if results1_ids != [20]:
+            print(f"[FAIL] Case 1 failed: expected [20], got {results1_ids}")
+            success = False
+
+        # Case 2: Filter start_time=6.0 -> Should only return frame_id=30 (timestamp 8.0)
+        res2 = service.search("person", top_k=5, use_llm=False, extract_clips=False, start_time=6.0)
+        results2_ids = [r["frame_id"] for r in res2.get("results", [])]
+        print(f"[TEST] Case 2 (>=6s) Results frame_ids: {results2_ids}")
+        if results2_ids != [30]:
+            print(f"[FAIL] Case 2 failed: expected [30], got {results2_ids}")
+            success = False
+
+        # Case 3: Filter end_time=4.0 -> Should only return frame_id=10 (timestamp 2.0)
+        res3 = service.search("person", top_k=5, use_llm=False, extract_clips=False, end_time=4.0)
+        results3_ids = [r["frame_id"] for r in res3.get("results", [])]
+        print(f"[TEST] Case 3 (<=4s) Results frame_ids: {results3_ids}")
+        if results3_ids != [10]:
+            print(f"[FAIL] Case 3 failed: expected [10], got {results3_ids}")
+            success = False
+
+    except Exception as e:
+        print(f"[FAIL] Error during temporal filtering test: {e}")
+        success = False
+    finally:
+        if 'service' in locals():
+            del service
+        # Cleanup
+        for p in [db_path, faiss_path, map_path]:
+            if os.path.exists(p):
+                try:
+                    os.remove(p)
+                except Exception as e:
+                    print(f"[WARN] Cleanup failed for {p}: {e}")
+
+    if success:
+        print("[SUCCESS] Temporal filtering unit test passed beautifully!")
+    return success
 
 
 def main():
@@ -192,13 +283,15 @@ def main():
     
     ocr_success = test_ocr_extraction()
     fusion_success = test_realtime_events_fusion()
+    temporal_success = test_temporal_filtering()
 
     print_header("Verification Summary Dashboard")
     print(f"1. EasyOCR On-Screen text extraction:    [{'PASS' if ocr_success else 'FAIL'}]")
     print(f"2. Real-Time events.csv identity fusion: [{'PASS' if fusion_success else 'FAIL'}]")
+    print(f"3. Temporal range filtering (From/To):  [{'PASS' if temporal_success else 'FAIL'}]")
     print("=" * 80)
     
-    if ocr_success and fusion_success:
+    if ocr_success and fusion_success and temporal_success:
         print("  ALL PIPELINE VERIFICATIONS PASSED SUCCESSFULLY! Ready for production deployment.")
     else:
         print("  SOME PIPELINE CHECKS FAILED. Please review the warning logs above.")
