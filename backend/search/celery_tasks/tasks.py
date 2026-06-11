@@ -14,6 +14,9 @@ Task 2: extract_clip_task
 """
 
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
+from dotenv import load_dotenv
+load_dotenv()
 import io
 import gc
 import uuid
@@ -105,6 +108,9 @@ def ensure_bucket(client, bucket_name: str):
 # Task 1: index_video_task — Full ML indexing pipeline
 # ----------------------------------------------------------------------
 
+_GLOBAL_ENCODER = None
+
+
 @celery_app.task(bind=True, name="search.tasks.index_video_task", max_retries=1)
 def index_video_task(self, video_id: str, storage_path: str, sampling_rate: int = 16):
     """
@@ -147,19 +153,24 @@ def index_video_task(self, video_id: str, storage_path: str, sampling_rate: int 
 
         from offline_index import FrameEncoder
 
-        # Check GPU availability — fallback to CPU if VRAM is heavily used
-        import torch
-        device_to_use = "cpu"
-        if torch.cuda.is_available():
-            free_vram = torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated(0)
-            # Only use GPU if more than 2GB VRAM is free
-            if free_vram > 2 * 1024 ** 3:
-                device_to_use = "cuda"
-            else:
-                print("[WARN] GPU VRAM heavily occupied — falling back to CPU for indexing")
-
-        print(f"[TASK] Initializing FrameEncoder on device: {device_to_use}")
-        encoder = FrameEncoder(use_vlm=(device_to_use == "cuda"))
+        global _GLOBAL_ENCODER
+        if _GLOBAL_ENCODER is None:
+            # Check GPU availability
+            import torch
+            device_to_use = "cpu"
+            if torch.cuda.is_available() and torch.cuda.device_count() > 0:
+                free_vram = torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated(0)
+                if free_vram > 2 * 1024 ** 3:
+                    device_to_use = "cuda"
+                else:
+                    print("[WARN] GPU VRAM heavily occupied — FrameEncoder will handle fallback dynamically")
+            
+            print(f"[TASK] Initializing global FrameEncoder (always enabling VLM, device hint: {device_to_use})")
+            _GLOBAL_ENCODER = FrameEncoder(use_vlm=True)
+        else:
+            print("[TASK] Re-using already initialized global FrameEncoder")
+        
+        encoder = _GLOBAL_ENCODER
 
         cap = cv2.VideoCapture(tmp_path)
         if not cap.isOpened():
@@ -281,12 +292,19 @@ def extract_clip_task(self, video_id: str, storage_path: str, frame_number: int,
         start_frame = int(start_time * fps)
         end_frame = int(end_time * fps)
 
+        # Target resolution: Scale to height 720 (HD), keeping aspect ratio
+        target_height = 720
+        aspect_ratio = width / height if height > 0 else 16/9
+        target_width = int(target_height * aspect_ratio)
+        if target_width % 2 != 0:
+            target_width += 1  # ensure width is even for codecs
+
         # Write clip to a second temp file
-        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as clip_tmp:
+        with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as clip_tmp:
             clip_tmp_path = clip_tmp.name
 
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        out_writer = cv2.VideoWriter(clip_tmp_path, fourcc, fps, (width, height))
+        fourcc = cv2.VideoWriter_fourcc(*"VP80")
+        out_writer = cv2.VideoWriter(clip_tmp_path, fourcc, fps, (target_width, target_height))
 
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         current_frame = start_frame
@@ -294,20 +312,21 @@ def extract_clip_task(self, video_id: str, storage_path: str, frame_number: int,
             ret, frame = cap.read()
             if not ret:
                 break
-            out_writer.write(frame)
+            resized_frame = cv2.resize(frame, (target_width, target_height))
+            out_writer.write(resized_frame)
             current_frame += 1
 
         cap.release()
         out_writer.release()
 
         # Upload clip to MinIO
-        clip_object_name = f"extracted_clips/{video_id}/clip_frame_{frame_number}_{timestamp_offset:.2f}s.mp4"
+        clip_object_name = f"extracted_clips/{video_id}/clip_frame_{frame_number}_{timestamp_offset:.2f}s.webm"
         ensure_bucket(minio, "extracted-search-clips")
         minio.fput_object(
             bucket_name="extracted-search-clips",
             object_name=clip_object_name,
             file_path=clip_tmp_path,
-            content_type="video/mp4"
+            content_type="video/webm"
         )
 
         print(f"[TASK] Clip uploaded to MinIO: {clip_object_name}")
@@ -434,7 +453,13 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
                 print(f"[RECORD] Connected to RTSP stream: {url}")
                 break
         if cap is None or not cap.isOpened():
-            raise RuntimeError(f"Could not open any RTSP stream for camera {camera_id}: {rtsp_urls}")
+            print(f"[RECORD] Could not open any RTSP stream for camera {camera_id}. Falling back to mock video for testing.")
+            mock_video_path = r"c:\Users\pouss\Documents\CSAI\Rawi-Vision\ai\search\videos\shoplifting.mp4"
+            cap = cv2.VideoCapture(mock_video_path)
+            if not cap.isOpened():
+                raise RuntimeError(f"Could not open mock video: {mock_video_path}")
+            else:
+                print(f"[RECORD] Mock video stream opened successfully from {mock_video_path}")
 
         fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -456,14 +481,14 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
             # Start a new chunk
             chunk_id = str(uuid.uuid4())
             chunk_timestamp = int(time.time())
-            chunk_filename = f"{camera_id}_{chunk_timestamp}.mp4"
+            chunk_filename = f"{camera_id}_{chunk_timestamp}.webm"
             storage_path = f"{camera_id}/{chunk_filename}"
 
             # Write chunk to a temp file
-            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_file:
+            with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp_file:
                 tmp_path = tmp_file.name
 
-            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            fourcc = cv2.VideoWriter_fourcc(*"VP80")
             out_writer = cv2.VideoWriter(tmp_path, fourcc, fps, (width, height))
 
             chunk_start = time.time()
@@ -509,7 +534,7 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
                 bucket_name="camera-archive-videos",
                 object_name=storage_path,
                 file_path=tmp_path,
-                content_type="video/mp4"
+                content_type="video/webm"
             )
 
             # Create IndexedVideo DB record

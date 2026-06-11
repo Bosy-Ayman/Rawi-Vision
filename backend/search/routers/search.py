@@ -148,52 +148,59 @@ async def query_search(
     db: db_dependency,
     service: SearchService = Depends(get_search_service)
 ):
-    """
-    Performs semantic vector similarity search against indexed frames in PostgreSQL.
-    Fuses biometric identities from events.csv, generates short video clips via Celery,
-    and optionally runs local CPU LLM reasoning to produce a natural language answer.
-    """
-    # Ensure the video is indexed before querying
-    stmt = select(IndexedVideo).filter(IndexedVideo.id == request.video_id)
-    result = await db.execute(stmt)
-    video = result.scalar_one_or_none()
+    try:
+        # Ensure the video is indexed before querying
+        stmt = select(IndexedVideo).filter(IndexedVideo.id == request.video_id)
+        result = await db.execute(stmt)
+        video = result.scalar_one_or_none()
 
-    if not video:
-        raise HTTPException(status_code=404, detail=f"Video {request.video_id} not found.")
+        if not video:
+            raise HTTPException(status_code=404, detail=f"Video {request.video_id} not found.")
 
-    if video.status != "completed":
-        raise HTTPException(
-            status_code=409,
-            detail=f"Video is still being indexed (status='{video.status}'). Please wait until indexing completes."
+        if video.status != "completed":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Video is still being indexed (status='{video.status}'). Please wait until indexing completes."
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+    try:
+        # Run semantic search + identity fusion + LLM reasoning
+        search_result = await service.search(
+            db=db,
+            video_id=request.video_id,
+            query=request.query,
+            top_k=request.top_k,
+            use_llm=request.use_llm
         )
 
-    # Run semantic search + identity fusion + LLM reasoning
-    search_result = await service.search(
-        db=db,
-        video_id=request.video_id,
-        query=request.query,
-        top_k=request.top_k,
-        use_llm=request.use_llm
-    )
+        # Dispatch async clip extraction tasks for each matched frame
+        # Clips are uploaded to MinIO and presigned URLs are pre-generated
+        for match in search_result["results"]:
+            extract_clip_task.delay(
+                video_id=str(request.video_id),
+                storage_path=video.storage_path,
+                frame_number=match["frame_id"],
+                timestamp_offset=match["timestamp"],
+                clip_duration=6.0
+            )
 
-    # Dispatch async clip extraction tasks for each matched frame
-    # Clips are uploaded to MinIO and presigned URLs are pre-generated
-    for match in search_result["results"]:
-        extract_clip_task.delay(
-            video_id=str(request.video_id),
-            storage_path=video.storage_path,
-            frame_number=match["frame_id"],
-            timestamp_offset=match["timestamp"],
-            clip_duration=6.0
-        )
-
-    return JSONResponse(content={
-        "query": search_result["query"],
-        "total_results": search_result["total_results"],
-        "llm_answer": search_result["llm_answer"],
-        "reid_tracks": search_result["reid_tracks"],
-        "results": search_result["results"]
-    })
+        return {
+            "query": search_result["query"],
+            "total_results": search_result["total_results"],
+            "llm_answer": search_result["llm_answer"],
+            "reid_tracks": search_result["reid_tracks"],
+            "results": search_result["results"]
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ----------------------------------------------------------------------
@@ -382,3 +389,79 @@ async def get_recording_status(camera_id: uuid.UUID):
 
 # Required for storage_path ext parsing
 from pathlib import Path
+
+
+# ----------------------------------------------------------------------
+# Endpoint 9: Stream Clip Proxy — avoids CORS issues with MinIO
+# ----------------------------------------------------------------------
+
+@search_router.get("/clip/{video_id}/{frame_number}")
+async def stream_clip(video_id: uuid.UUID, frame_number: int, timestamp: float = 0.0):
+    """
+    Proxy endpoint that streams a video clip from MinIO through FastAPI.
+    This avoids browser CORS/auth issues when accessing MinIO directly.
+    Returns 404 if the clip hasn't been generated yet (Celery task still running).
+    """
+    from fastapi.responses import StreamingResponse, Response
+    import io
+
+    minio = get_minio()
+    clip_object_name = f"extracted_clips/{video_id}/clip_frame_{frame_number}_{timestamp:.2f}s.webm"
+
+    try:
+        response = minio.get_object("extracted-search-clips", clip_object_name)
+        data = response.read()
+        response.close()
+        response.release_conn()
+        return Response(
+            content=data,
+            media_type="video/webm",
+            headers={
+                "Content-Disposition": f"inline; filename=clip_{frame_number}.webm",
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "no-cache",
+            }
+        )
+    except Exception as e:
+        err_str = str(e).lower()
+        if "nosuchkey" in err_str or "no such key" in err_str or "does not exist" in err_str or "404" in err_str:
+            raise HTTPException(status_code=404, detail="Clip not yet generated. Please retry shortly.")
+        raise HTTPException(status_code=500, detail=f"Error fetching clip: {e}")
+
+
+@search_router.get("/clip-status/{video_id}/{frame_number}")
+async def get_clip_status(video_id: uuid.UUID, frame_number: int, timestamp: float = 0.0):
+    """Check if a clip has been generated yet without downloading it."""
+    minio = get_minio()
+    clip_object_name = f"extracted_clips/{video_id}/clip_frame_{frame_number}_{timestamp:.2f}s.webm"
+    try:
+        minio.stat_object("extracted-search-clips", clip_object_name)
+        return {"ready": True, "clip_url": f"/api/search/clip/{video_id}/{frame_number}?timestamp={timestamp:.2f}"}
+    except Exception:
+        return {"ready": False}
+
+
+@search_router.get("/video/{video_id}/stream")
+async def stream_full_video(video_id: uuid.UUID, db: db_dependency):
+    """Redirects to a presigned MinIO URL to stream the full video directly to the browser."""
+    from fastapi.responses import RedirectResponse
+    from datetime import timedelta
+    
+    minio = get_minio()
+    stmt = select(IndexedVideo).filter(IndexedVideo.id == video_id)
+    result = await db.execute(stmt)
+    video = result.scalar_one_or_none()
+    
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+        
+    try:
+        url = minio.presigned_get_object(
+            "camera-archive-videos", 
+            video.storage_path, 
+            expires=timedelta(hours=1)
+        )
+        return RedirectResponse(url)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating stream URL: {e}")
+

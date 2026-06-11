@@ -26,11 +26,6 @@ import numpy as np
 import torch
 from PIL import Image
 from transformers import AutoModelForImageTextToText, AutoProcessor
-from sentence_transformers import SentenceTransformer
-import faiss
-from ultralytics import YOLO
-import easyocr
-
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # --- Configurable models ---
@@ -97,6 +92,7 @@ class FAISSIdx:
         self._load_or_create()
 
     def _load_or_create(self):
+        import faiss
         if Path(self.faiss_path).exists():
             print(f"[INFO] Loading existing FAISS index from {self.faiss_path}")
             self.index = faiss.read_index(self.faiss_path)
@@ -115,6 +111,7 @@ class FAISSIdx:
         self.map[len(self.map)] = frame_id
 
     def save(self):
+        import faiss
         faiss.write_index(self.index, self.faiss_path)
         with open(self.map_path, "w") as f:
             json.dump(self.map, f)
@@ -132,38 +129,54 @@ class FrameEncoder:
         if use_vlm:
             print("[INFO] Loading VLM (this may take a minute)...")
             try:
-                self.vlm = AutoModelForImageTextToText.from_pretrained(
-                    VLM_MODEL,
-                    torch_dtype=torch.float16 if DEVICE == "cuda" else torch.bfloat16,
-                    trust_remote_code=True,
-                    low_cpu_mem_usage=True
-                )
                 if DEVICE == "cuda":
-                    self.vlm = self.vlm.to(DEVICE)
+                    from transformers import BitsAndBytesConfig
+                    quantization_config = BitsAndBytesConfig(
+                        load_in_4bit=True,
+                        bnb_4bit_compute_dtype=torch.bfloat16,
+                        bnb_4bit_use_double_quant=True,
+                        bnb_4bit_quant_type="nf4"
+                    )
+                    self.vlm = AutoModelForImageTextToText.from_pretrained(
+                        VLM_MODEL,
+                        quantization_config=quantization_config,
+                        device_map="auto",
+                        low_cpu_mem_usage=True,
+                        trust_remote_code=True
+                    )
+                else:
+                    self.vlm = AutoModelForImageTextToText.from_pretrained(
+                        VLM_MODEL,
+                        torch_dtype=torch.bfloat16,
+                        trust_remote_code=True,
+                        low_cpu_mem_usage=True
+                    )
                 self.vlm_proc = AutoProcessor.from_pretrained(VLM_MODEL)
-                print("[INFO] VLM loaded successfully on GPU")
+                print("[INFO] VLM loaded successfully")
             except Exception as e:
                 print(f"[WARN] Failed to load VLM: {e}")
                 self.vlm = None
 
         # 2. Load YOLO model
-        print("[INFO] Loading YOLO model...")
+        from ultralytics import YOLO
+        print("[INFO] Loading YOLO model on CPU...")
         self.yolo_model = YOLO("yolov8m.pt")
-        if DEVICE == "cuda":
-            self.yolo_model = self.yolo_model.to(DEVICE)
+        self.yolo_model = self.yolo_model.to("cpu")
 
         # 3. Load EasyOCR reader
-        print("[INFO] Loading EasyOCR reader...")
+        import easyocr
+        print("[INFO] Loading EasyOCR reader on CPU...")
         try:
-            self.ocr_reader = easyocr.Reader(['en'], gpu=DEVICE == "cuda")
+            self.ocr_reader = easyocr.Reader(['en'], gpu=False)
             print("[INFO] EasyOCR reader loaded")
         except Exception as e:
             print(f"[WARN] Failed to load EasyOCR: {e}")
             self.ocr_reader = None
 
         # 4. Load Sentence Transformer embedding model
-        print("[INFO] Loading embedding model...")
-        self.emb_model = SentenceTransformer(EMBEDDING_MODEL, device=DEVICE)
+        from sentence_transformers import SentenceTransformer
+        print("[INFO] Loading embedding model on CPU...")
+        self.emb_model = SentenceTransformer(EMBEDDING_MODEL, device="cpu")
 
         print("[INFO] FrameEncoder ready")
 
@@ -256,7 +269,12 @@ class FrameEncoder:
             prompt = self.vlm_proc.apply_chat_template(messages, add_generation_prompt=True)
             inputs = self.vlm_proc(text=prompt, images=img, return_tensors="pt").to(DEVICE)
             with torch.no_grad():
-                out = self.vlm.generate(**inputs, max_new_tokens=120, do_sample=False)
+                out = self.vlm.generate(
+                    **inputs,
+                    max_new_tokens=120,
+                    do_sample=False,
+                    repetition_penalty=1.2
+                )
             out = out[:, inputs["input_ids"].shape[1]:]
             return self.vlm_proc.batch_decode(out, skip_special_tokens=True)[0].strip()
         except Exception as e:

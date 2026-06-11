@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
 import { searchAPI } from '../api/search';
+import { BASE_URL } from '../api/client';
 import './Clips.css';
 
 const Clips = () => {
@@ -15,7 +16,7 @@ const Clips = () => {
     const fetchVideos = async () => {
         try {
             const data = await searchAPI.listVideos();
-            setVideos(data.videos || []);
+            setVideos(Array.isArray(data) ? data : (data.videos || []));
         } catch (err) {
             console.error("Failed to fetch videos", err);
         } finally {
@@ -75,12 +76,20 @@ const Clips = () => {
                     <div className="insights-grid">
                         {videos.map((video) => (
                             <div key={video.video_id} className="insight-card">
-                                <div className="insight-image-placeholder">
-                                    <div className="video-status-overlay">
-                                        <span className={`status-badge ${video.status}`}>
-                                            {video.status.toUpperCase()}
-                                        </span>
-                                    </div>
+                                <div className="insight-image-placeholder" style={{ padding: 0, overflow: 'hidden', backgroundColor: '#000' }}>
+                                    {video.status === 'completed' ? (
+                                        <video 
+                                            src={`${BASE_URL}/api/search/video/${video.video_id}/stream`}
+                                            controls
+                                            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                                        />
+                                    ) : (
+                                        <div className="video-status-overlay">
+                                            <span className={`status-badge ${video.status}`}>
+                                                {video.status.toUpperCase()}
+                                            </span>
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="insight-content" style={{ position: 'relative' }}>
                                     <h3 className="insight-title" style={{ fontSize: '0.9rem', marginBottom: '4px' }}>

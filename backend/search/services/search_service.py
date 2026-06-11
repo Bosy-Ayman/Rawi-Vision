@@ -7,6 +7,7 @@ from typing import List, Optional, Tuple, Dict, Any
 from datetime import datetime
 
 from minio import Minio
+from sqlalchemy import desc
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -80,42 +81,119 @@ class LLMReasoner:
         )
         print("[INFO] Local CPU LLM loaded successfully.")
 
-    def answer(self, query: str, contexts: List[str], max_new_tokens=256) -> str:
+    def answer(self, query: str, contexts: List[str], max_new_tokens=120) -> str:
         import torch
-        fused_context = "\n".join([f"- {ctx}" for ctx in contexts])
+        import re
+
+        # Separate the tracking/timeline context from the visual frame descriptions
+        visual_contexts = [c for c in contexts if "Subject Tracking" not in c]
+        tracking_contexts = [c for c in contexts if "Subject Tracking" in c]
+
+        # Use only the top 3 visual frame descriptions to avoid overloading the context window
+        top_visual = visual_contexts[:3]
         
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are Rawi-Vision Search AI, a security intelligence assistant. "
-                    "Analyze the provided surveillance visual metadata context and timeline. "
-                    "Synthesize a clear, concise, and direct description of the event matching "
-                    "the query. Keep the response factual, short, and objective. "
-                    "Refer to subjects by their real-time identities and tracks if present."
+        # Format the context cleanly
+        fused_visual = "\n".join([f"- {ctx}" for ctx in top_visual])
+        fused_tracking = "\n".join(tracking_contexts) if tracking_contexts else ""
+
+        # Step 1: Hybrid validation check to avoid hallucinations on false positives
+        # Extract alphanumeric lowercase words from query
+        query_words = set(re.findall(r'[a-zA-Z0-9]+', query.lower()))
+        # Filter out common stopwords
+        STOPWORDS = {
+            'a', 'an', 'the', 'in', 'on', 'at', 'by', 'with', 'for', 'of', 'and', 'or', 'is', 'are', 'was', 'were', 
+            'be', 'been', 'being', 'to', 'from', 'he', 'she', 'it', 'they', 'them', 'his', 'her', 'their', 'him', 
+            'who', 'whom', 'what', 'which', 'whose', 'this', 'that', 'these', 'those', 'i', 'you', 'we', 'us'
+        }
+        content_words = {w for w in query_words if w not in STOPWORDS and len(w) > 1}
+        
+        # Check if any content word exists in contexts
+        context_lower = fused_visual.lower() + " " + fused_tracking.lower()
+        has_direct_word_match = False
+        if content_words:
+            context_words = set(re.findall(r'[a-zA-Z0-9]+', context_lower))
+            if content_words.issubset(context_words):
+                has_direct_word_match = True
+
+        # If no direct keyword match, run Yes/No validation using LLM
+        is_match = True
+        if not has_direct_word_match:
+            prompt_val = (
+                f"System: You are an AI analyzing security descriptions.\n"
+                f"Context:\n{fused_visual}\n\n"
+                f"Question: Does the Context above contain any description, mention, or objects related to '{query}'? Reply with only 'Yes' or 'No'.\n"
+                f"Answer:"
+            )
+            inputs_val = self.tokenizer(prompt_val, return_tensors="pt", truncation=True, max_length=1024)
+            inputs_val = {k: v.to(self.model.device) for k, v in inputs_val.items()}
+            with torch.no_grad():
+                outputs_val = self.model.generate(
+                    **inputs_val,
+                    max_new_tokens=5,
+                    do_sample=False,
+                    repetition_penalty=1.3,
+                    pad_token_id=self.tokenizer.pad_token_id,
+                    eos_token_id=self.tokenizer.eos_token_id,
                 )
-            },
-            {
-                "role": "user",
-                "content": f"Query: {query}\n\nMetadata Context:\n{fused_context}\n\nAnswer:"
-            }
-        ]
-        
-        prompt = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=2048)
+            input_length_val = inputs_val["input_ids"].shape[1]
+            val_answer = self.tokenizer.decode(outputs_val[0][input_length_val:], skip_special_tokens=True).strip()
+            if val_answer.lower().startswith("no"):
+                is_match = False
+
+        if not is_match:
+            return "No matching events or objects found in this video."
+
+        # Step 2: Factual Summary Generation (Run only if validated as a match)
+        # Construct a simpler, direct prompt that works reliably with small 0.5B models
+        prompt = (
+            f"You are a factual video metadata analyzer. You must report only what is explicitly present in the provided Visual Metadata Context. Do not speculate, guess, or assume activities (like stealing, theft, or crimes) unless they are explicitly stated in the context.\n\n"
+            f"Visual Metadata Context:\n{fused_visual}\n"
+        )
+        if fused_tracking:
+            prompt += f"\nTracking Context:\n{fused_tracking}\n"
+            
+        prompt += (
+            f"\nQuestion: {query}\n\n"
+            f"Write a concise 2-sentence factual summary of the event based ONLY on the context above:\n"
+        )
+
+        inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=1024)
         inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
-        
+
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
                 do_sample=False,
-                pad_token_id=self.tokenizer.pad_token_id
+                repetition_penalty=1.3,
+                no_repeat_ngram_size=4,
+                pad_token_id=self.tokenizer.pad_token_id,
+                eos_token_id=self.tokenizer.eos_token_id,
             )
-        
+
         input_length = inputs["input_ids"].shape[1]
         answer = self.tokenizer.decode(outputs[0][input_length:], skip_special_tokens=True)
-        return answer.strip() if answer else "No reasoning generated."
+        answer = answer.strip()
+
+        # Clean answer to keep only the main paragraph and strip trailing notes/rambling
+        paragraphs = [p.strip() for p in answer.split("\n\n") if p.strip()]
+        if paragraphs:
+            answer = paragraphs[0]
+            
+        lines = [l.strip() for l in answer.split("\n") if l.strip()]
+        if lines:
+            answer = lines[0]
+
+        # Strip common meta-cognitive rambling prefixes/suffixes
+        for term in ["please note", "note:", "in conclusion", "explanation:"]:
+            if term in answer.lower():
+                idx = answer.lower().find(term)
+                answer = answer[:idx].strip()
+
+        # If the model echoed the prompt or generated garbage, return a clean fallback description
+        if not answer or len(answer) < 15 or "Write a concise" in answer:
+            return "Based on the visual search results, matched frames highlight scenes similar to your query."
+        return answer
 
 # ----------------------------------------------------------------------
 # Main Search Service wrapping postgres pgvector and MinIO access
@@ -164,7 +242,7 @@ class SearchService:
         stmt = (
             select(VideoFrame, (1 - VideoFrame.embedding.cosine_distance(query_vector)).label("similarity"))
             .filter(VideoFrame.video_id == video_id)
-            .order_by("similarity")
+            .order_by(desc("similarity"))
             .limit(top_k)
         )
         
@@ -186,13 +264,19 @@ class SearchService:
                         matched_rt_tracks.add(int(track_id_str))
 
         results = []
-        descriptions = []
+        raw_descriptions_map = {}  # map frame_number to clean VLM desc
         active_track_ids = set()
+
+        SIM_THRESHOLD = 35.0
 
         for frame_row, similarity_score in rows:
             # Convert decimal similarity to percentage
             sim = round(float(similarity_score) * 100, 1)
             
+            # Skip matches that are below the similarity threshold
+            if sim < SIM_THRESHOLD:
+                continue
+                
             frame_track_ids = []
             if frame_row.tracks:
                 try:
@@ -200,8 +284,16 @@ class SearchService:
                 except ValueError:
                     pass
             
-            # Fuse with identity information from events.csv
-            enriched_desc = frame_row.description
+            # Remove redundant OCR from objects section in description
+            desc_parts = frame_row.description.split(" | ")
+            if len(desc_parts) >= 2:
+                obj_part = desc_parts[1]
+                if ", with detected text:" in obj_part:
+                    obj_part = obj_part.split(", with detected text:")[0]
+                desc_parts[1] = obj_part
+            cleaned_db_desc = " | ".join(desc_parts)
+
+            enriched_desc = cleaned_db_desc
             active_names = []
             for t in frame_track_ids:
                 active_track_ids.add(t)
@@ -211,20 +303,17 @@ class SearchService:
                         break
             
             if active_names:
-                enriched_desc = f"{frame_row.description} [Real-time Identity: {', '.join(active_names)}]"
+                enriched_desc = f"{cleaned_db_desc} [Real-time Identity: {', '.join(active_names)}]"
 
-            # Generate presigned MinIO video clip URL
-            clip_object_name = f"extracted_clips/{video_id}/clip_frame_{frame_row.frame_number}_{frame_row.timestamp_offset:.2f}s.mp4"
-            clip_url = None
+            # Generate proxy clip URL through FastAPI (avoids MinIO CORS issues)
+            clip_object_name = f"extracted_clips/{video_id}/clip_frame_{frame_row.frame_number}_{frame_row.timestamp_offset:.2f}s.webm"
+            clip_url = f"/api/search/clip/{video_id}/{frame_row.frame_number}?timestamp={frame_row.timestamp_offset:.2f}"
+            # Check if clip already exists in MinIO; if not, it will be generated shortly by Celery
             try:
-                # Expiry set to 1 hour
-                clip_url = self.minio_client.presigned_get_object(
-                    bucket_name="extracted-search-clips",
-                    object_name=clip_object_name,
-                    expires=3600
-                )
-            except Exception as e:
-                print(f"[WARN] MinIO presigned URL error: {e}")
+                self.minio_client.stat_object("extracted-search-clips", clip_object_name)
+            except Exception:
+                # Clip doesn't exist yet — the Celery task will generate it
+                pass
 
             results.append({
                 "frame_id": frame_row.frame_number,
@@ -234,7 +323,34 @@ class SearchService:
                 "clip_url": clip_url,
                 "track_ids": frame_track_ids
             })
-            descriptions.append(enriched_desc)
+            raw_descriptions_map[frame_row.frame_number] = frame_row.description.split(" | ")[0]
+
+        # Temporal deduplication: suppress matches close in time to a higher-similarity match (3.0s window)
+        deduped_results = []
+        sorted_results = sorted(results, key=lambda x: x["similarity"], reverse=True)
+        for r in sorted_results:
+            is_redundant = False
+            for k in deduped_results:
+                if abs(r["timestamp"] - k["timestamp"]) < 3.0:
+                    is_redundant = True
+                    break
+            if not is_redundant:
+                deduped_results.append(r)
+                
+        results = sorted(deduped_results, key=lambda x: x["timestamp"])
+
+        # Re-build descriptions list from the deduplicated results
+        descriptions = [raw_descriptions_map[r["frame_id"]] for r in results]
+
+        # Short-circuit if no frames met the similarity threshold
+        if not results:
+            return {
+                "query": query,
+                "total_results": 0,
+                "results": [],
+                "reid_tracks": {},
+                "llm_answer": "No matching events or objects found in this video."
+            }
 
         # Build Re-ID timeline of when each track ID was seen throughout the video
         reid_tracks = {}
@@ -261,7 +377,10 @@ class SearchService:
         if reid_tracks:
             tracking_context_str = "\nSubject Tracking & Re-ID Timelines:\n"
             for track_name, apps in reid_tracks.items():
-                timestamps_str = ", ".join([f"{a['timestamp']}s" for a in apps])
+                if len(apps) > 8:
+                    timestamps_str = ", ".join([f"{a['timestamp']}s" for a in apps[:8]]) + f"... and {len(apps) - 8} other times."
+                else:
+                    timestamps_str = ", ".join([f"{a['timestamp']}s" for a in apps])
                 tracking_context_str += f"- {track_name} was detected at: {timestamps_str}\n"
 
         # Local CPU LLM RAG Reasoning
@@ -275,6 +394,10 @@ class SearchService:
                 
                 llm = LLMReasoner.get_instance()
                 llm_answer = llm.answer(query, combined_descriptions)
+                
+                # If LLM reasoner determines no matching events, filter out the results
+                if llm_answer == "No matching events or objects found in this video.":
+                    results = []
             except Exception as e:
                 print(f"[WARN] Local CPU LLM execution failed: {e}")
                 llm_answer = "Local LLM reasoning unavailable."
