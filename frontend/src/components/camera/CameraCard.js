@@ -23,6 +23,8 @@ const CameraCard = ({ camera }) => {
     const [isRecording, setIsRecording] = useState(false);
     const [recordingChunks, setRecordingChunks] = useState(0);
     const [isActionLoading, setIsActionLoading] = useState(false);
+    const [burnBboxes, setBurnBboxes] = useState(false);
+
 
     const cardRef = useRef(null);
 
@@ -59,8 +61,9 @@ const CameraCard = ({ camera }) => {
                 setIsRecording(false);
                 alert("Recording stop signal sent. It will finish the current chunk.");
             } else {
-                await searchAPI.startRecording(camera.id, 600, 60); // Record for 10 mins, chunk 60s
+                await searchAPI.startRecording(camera.id, 600, 60, burnBboxes); // Record for 10 mins, chunk 60s
                 setIsRecording(true);
+
                 setRecordingChunks(0);
                 navigate('/dashboard/clips');
             }
@@ -206,7 +209,19 @@ const CameraCard = ({ camera }) => {
                     <span className="camera-room">{camera.room || 'Room'}</span>
                     <span className="camera-building">{camera.building || 'Building'}</span>
                 </div>
-                <div className="camera-controls">
+                <div className="camera-controls" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {!isRecording && (
+                        <label className="camera-bbox-label" style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', cursor: 'pointer', color: burnBboxes ? '#3b82f6' : '#9ca3af', userSelect: 'none' }}>
+                            <input
+                                type="checkbox"
+                                checked={burnBboxes}
+                                onChange={(e) => setBurnBboxes(e.target.checked)}
+                                disabled={isActionLoading}
+                                style={{ cursor: 'pointer', width: '13px', height: '13px', margin: 0 }}
+                            />
+                            AI BBoxes
+                        </label>
+                    )}
                     <button
                         className="camera-ctrl-btn"
                         onClick={handleRecordToggle}
@@ -216,6 +231,7 @@ const CameraCard = ({ camera }) => {
                     >
                         {isRecording ? '⏹ REC' : '⏺ AI REC'}
                     </button>
+
                     <button
                         className="camera-ctrl-btn"
                         onClick={handlePauseToggle}

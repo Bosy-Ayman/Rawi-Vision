@@ -108,16 +108,18 @@ export const searchAPI = {
         });
     },
 
-    startRecording: (cameraId, duration = 600, chunkSize = 300) => {
+    startRecording: (cameraId, duration = 600, chunkSize = 300, burnBboxes = false) => {
         return apiClient(`/api/search/record/${cameraId}`, {
             method: 'POST',
             body: JSON.stringify({
                 duration: duration,
                 chunk_size: chunkSize,
-                sampling_rate: 16
+                sampling_rate: 16,
+                burn_bboxes: burnBboxes
             })
         });
     },
+
 
     stopRecording: (cameraId) => {
         return apiClient(`/api/search/record/${cameraId}/stop`, {

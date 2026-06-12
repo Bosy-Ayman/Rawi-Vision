@@ -1,31 +1,37 @@
 import os
-import socket
-from dotenv import load_dotenv
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker
 from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 from config import Config
 
-URL_DATABASE = Config.DATABASE_URL 
-engine = create_async_engine(URL_DATABASE)
+URL_DATABASE = Config.DATABASE_URL
 
-# Fix: expire_on_commit=False prevents SQLAlchemy from throwing "MissingGreenlet" 
-# when accessing an object's attributes (like new_employee.id) after a commit!
-sessionlocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine, expire_on_commit=False)
+engine = create_async_engine(
+    URL_DATABASE,
+    pool_pre_ping=True,    # ← detects and discards stale connections
+    pool_recycle=1800,     # ← recycle connections every 30 min
+    pool_size=10,
+    max_overflow=20,
+)
+
+sessionlocal = async_sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine,
+    expire_on_commit=False,
+)
 
 class Base(DeclarativeBase):
-    pass 
+    pass
 
 async def get_db():
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all) 
+        await conn.run_sync(Base.metadata.create_all)
     db = sessionlocal()
     try:
         yield db
     finally:
-        await db.close() 
+        await db.close()
 
 db_dependency = Annotated[AsyncSession, Depends(get_db)]

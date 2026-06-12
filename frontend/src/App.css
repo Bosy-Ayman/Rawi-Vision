@@ -850,6 +850,21 @@ body:has(.insight-card:hover) .custom-cursor {
     object-fit: contain;
 }
 
+.sidebar-text {
+    flex: 1;
+}
+
+.sidebar-upgrade-badge {
+    font-size: 9px;
+    font-weight: 600;
+    background: #e67e22;
+    color: #fff;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: auto;
+    white-space: nowrap;
+}
+
 .sidebar-footer {
     padding: 1rem 0;
     border-top: 1px solid #e5e7eb;

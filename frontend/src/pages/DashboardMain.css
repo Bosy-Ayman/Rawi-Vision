@@ -1,4 +1,4 @@
-.dashboard-main-container {
+ .dashboard-main-container {
     display: flex;
     flex-direction: column;
     gap: 24px;
@@ -63,28 +63,64 @@
     font-size: 28px;
 }
 
+/* Enhanced Stat Cards (with Avatars) */
+.stat-card-enhanced {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 4px;
+}
+
+.stat-card-info {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.stat-card-name {
+    font-size: 20px;
+    font-weight: 700;
+    color: #0f172a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.stat-card-sub {
+    font-size: 14px;
+    color: #64748b;
+    font-weight: 500;
+    margin-top: 2px;
+}
+
 /* Charts Area */
 .charts-row {
     display: flex;
-    gap: 20px;
-    height: 320px;
+    gap: 24px;
+    height: 340px;
 }
 
 .chart-card {
     background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 16px;
+    border: 1px solid #f1f5f9;
+    border-radius: 20px;
     padding: 24px;
     flex: 1;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.04);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chart-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 25px -5px rgba(0, 0, 0, 0.08);
 }
 
 .chart-wrapper {
     flex: 1;
     min-height: 0;
-    margin-top: 10px;
+    margin-top: 16px;
 }
 
 /* Table Area */
@@ -262,4 +298,38 @@
 .page-number {
     font-weight: 600;
     color: #0f172a;
+}
+
+/* Badge Styles */
+.role-badge {
+    background-color: #f1f5f9;
+    color: #475569;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border: 1px solid #e2e8f0;
+}
+
+.time-cell {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    color: #334155;
+    font-weight: 500;
+}
+
+.look-count-cell {
+    text-align: center;
+}
+
+.look-badge {
+    display: inline-block;
+    background-color: #eff6ff;
+    color: #2563eb;
+    border: 1px solid #bfdbfe;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 14px;
 }

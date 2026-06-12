@@ -30,6 +30,16 @@ class AttendanceService:
         except Exception as error:
             raise error
     
+    async def update_attendance_duration(self, employee_id: UUID, camera_id: str, duration_seconds: float):
+        try:
+            updated_record = await self.repo.update_attendance_duration(employee_id, camera_id, duration_seconds)
+            if updated_record:
+                await self.repo.db.commit()
+                await self.repo.db.refresh(updated_record)
+            return updated_record
+        except Exception as error:
+            raise error
+
     async def delete_attendance_record(self, employee_id:UUID):
         try:
             attendance_records = await self.repo.read_attendance_record_by_employee_id(employee_id)

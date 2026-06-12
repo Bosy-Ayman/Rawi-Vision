@@ -255,29 +255,29 @@ const Clips = () => {
                 </div>
 
                 <div className="clips-stats-row">
-                    <div className="stat-card">
+                    <div className="stat-card" style={{ '--stat-accent': 'linear-gradient(90deg, #6c5ce7, #a29bfe)' }}>
                         <span className="stat-icon">🎞️</span>
                         <div className="stat-info">
                             <span className="stat-value">{videos.length}</span>
                             <span className="stat-label">Total Clips</span>
                         </div>
                     </div>
-                    <div className="stat-card">
-                        <span className="stat-icon" style={{ color: '#10b981' }}>✅</span>
+                    <div className="stat-card" style={{ '--stat-accent': 'linear-gradient(90deg, #10b981, #34d399)' }}>
+                        <span className="stat-icon">✅</span>
                         <div className="stat-info">
                             <span className="stat-value">{videos.filter(v => v.status === 'completed').length}</span>
                             <span className="stat-label">Indexed</span>
                         </div>
                     </div>
-                    <div className="stat-card">
-                        <span className="stat-icon" style={{ color: '#3b82f6' }}>⚡</span>
+                    <div className="stat-card" style={{ '--stat-accent': 'linear-gradient(90deg, #3b82f6, #60a5fa)' }}>
+                        <span className="stat-icon">⚡</span>
                         <div className="stat-info">
                             <span className="stat-value">{videos.filter(v => v.status === 'indexing' || v.status === 'pending').length}</span>
                             <span className="stat-label">Indexing</span>
                         </div>
                     </div>
-                    <div className="stat-card">
-                        <span className="stat-icon" style={{ color: '#ef4444' }}>⚠️</span>
+                    <div className="stat-card" style={{ '--stat-accent': 'linear-gradient(90deg, #ef4444, #f87171)' }}>
+                        <span className="stat-icon">⚠️</span>
                         <div className="stat-info">
                             <span className="stat-value">{videos.filter(v => v.status === 'failed').length}</span>
                             <span className="stat-label">Failed</span>

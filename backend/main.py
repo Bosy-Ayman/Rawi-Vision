@@ -35,6 +35,19 @@ async def lifespan(app: FastAPI):
     async for _ in get_db():
         break
 
+    # ── Clear stale recording status keys from Redis ─────────────────────────
+    try:
+        import redis
+        from config import Config
+        r = redis.Redis(host=Config.REDIS_HOST, port=Config.REDIS_PORT, db=0)
+        rec_keys = r.keys("recording:status:*")
+        if rec_keys:
+            r.delete(*rec_keys)
+            print(f"[Lifespan] Cleared {len(rec_keys)} stale recording status keys from Redis.")
+    except Exception as e:
+        print(f"[Lifespan] Failed to clear stale recording keys: {e}")
+
+
     import threading
     from kombu import Connection
     from attendance.service.kombu_consumer import AttendanceConsumer
@@ -173,21 +186,27 @@ import traceback
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request, exc):
+    import traceback
     tb = traceback.format_exc()
     print("REQUEST VALIDATION ERROR:", str(exc))
     return JSONResponse(
         status_code=422,
-        content={"detail": str(exc), "errors": exc.errors(), "body": exc.body}
+        content={"detail": "Request Validation Error: " + str(exc)}
     )
 
 @app.exception_handler(ResponseValidationError)
 async def response_validation_exception_handler(request, exc):
     tb = traceback.format_exc()
     print("RESPONSE VALIDATION ERROR:", str(exc))
+    try:
+        errors_str = str(exc.errors())
+    except Exception:
+        errors_str = "Unserializable errors"
     return JSONResponse(
         status_code=500,
-        content={"detail": str(exc), "errors": exc.errors()}
+        content={"detail": str(exc), "errors": errors_str}
     )
+
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):

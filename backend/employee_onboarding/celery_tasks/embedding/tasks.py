@@ -2,8 +2,6 @@ import cv2
 import os
 import pickle
 import numpy as np
-from mtcnn import MTCNN
-from keras_facenet import FaceNet
 from celery import Celery, shared_task
 import httpx
 import uuid
@@ -15,12 +13,27 @@ from config import Config
 
 BASE_URL = Config.SERVER_URL
 
-detector = MTCNN()
-embedder = FaceNet()
+_detector = None
+_embedder = None
+
+def get_face_models():
+    global _detector, _embedder
+    if _embedder is None:
+        print("[INFO] Initializing facenet-pytorch InceptionResnetV1 for embeddings...")
+        from facenet_pytorch import MTCNN, InceptionResnetV1
+        import torch
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        _detector = MTCNN(keep_all=False, device=device)
+        _embedder = InceptionResnetV1(pretrained="vggface2").eval().to(device)
+    return _detector, _embedder
 
 def generate_embedding(images_bytes):
+    detector, embedder = get_face_models()
     embeddings = []
     processed = 0
+    import torch
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    
     for idx, image_bytes in enumerate(images_bytes, 1):
         img_array = np.frombuffer(image_bytes, dtype=np.uint8)
         image = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
@@ -28,17 +41,17 @@ def generate_embedding(images_bytes):
             print(f"Warning: could not decode image {idx}, skipping.")
             continue
         rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        # [1] MTCNN face detection
-        faces = detector.detect_faces(rgb_image)
-        if not faces:
+        
+        # MTCNN from facenet-pytorch detects faces and returns cropped & normalized tensors
+        # directly ready for InceptionResnetV1!
+        face_tensor = detector(rgb_image)
+        if face_tensor is None:
             print(f"Warning: no face detected in image {idx}, skipping.")
             continue
-        x, y, w, h = faces[0]['box']
-        x, y = max(0, x), max(0, y)
-        x2, y2 = min(rgb_image.shape[1], x + w), min(rgb_image.shape[0], y + h)
-        face_crop = rgb_image[y:y2, x:x2]
-        # [2] FaceNet embedding
-        embedding = embedder.embeddings([face_crop])[0]
+        
+        with torch.no_grad():
+            embedding = embedder(face_tensor.unsqueeze(0).to(device)).cpu().numpy()[0]
+            
         embeddings.append(embedding)
         processed += 1
         print(f"Processed {processed} images so far.")

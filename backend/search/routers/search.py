@@ -200,65 +200,80 @@ async def get_video_status(video_id: uuid.UUID, db: db_dependency):
 # Endpoint 3: Semantic Search Query
 # ----------------------------------------------------------------------
 
+import logging
+logger = logging.getLogger(__name__)
+
 @search_router.post("/query", response_model=SearchQueryResponse)
 async def query_search(
     request: SearchQueryRequest,
     db: db_dependency,
     service: SearchService = Depends(get_search_service)
 ):
+    logger.warning(">>> [query_search] Starting request: %s", request.dict())
     try:
-        # Ensure the video is indexed before querying
-        stmt = select(IndexedVideo).filter(IndexedVideo.id == request.video_id)
-        result = await db.execute(stmt)
-        video = result.scalar_one_or_none()
+        try:
+            # Ensure the video is indexed before querying
+            stmt = select(IndexedVideo).filter(IndexedVideo.id == request.video_id)
+            result = await db.execute(stmt)
+            video = result.scalar_one_or_none()
 
-        if not video:
-            raise HTTPException(status_code=404, detail=f"Video {request.video_id} not found.")
+            if not video:
+                raise HTTPException(status_code=404, detail=f"Video {request.video_id} not found.")
 
-        if video.status != "completed":
-            raise HTTPException(
-                status_code=409,
-                detail=f"Video is still being indexed (status='{video.status}'). Please wait until indexing completes."
+            if video.status != "completed":
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Video is still being indexed (status='{video.status}'). Please wait until indexing completes."
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=str(e))
+
+        try:
+            logger.warning(">>> [query_search] Calling service.search")
+            # Run semantic search + identity fusion + LLM reasoning
+            search_result = await service.search(
+                db=db,
+                video_id=request.video_id,
+                query=request.query,
+                top_k=request.top_k,
+                use_llm=request.use_llm
             )
-    except HTTPException:
-        raise
-    except Exception as e:
+            logger.warning(">>> [query_search] service.search returned successfully")
+
+            # Dispatch async clip extraction tasks for each matched frame
+            # Clips are uploaded to MinIO and presigned URLs are pre-generated
+            logger.warning(">>> [query_search] Dispatching clip tasks")
+            for match in search_result["results"]:
+                extract_clip_task.delay(
+                    video_id=str(request.video_id),
+                    storage_path=video.storage_path,
+                    frame_number=match["frame_id"],
+                    timestamp_offset=match["timestamp"],
+                    clip_duration=6.0
+                )
+
+            logger.warning(">>> [query_search] Returning response")
+            return {
+                "query": search_result["query"],
+                "total_results": search_result["total_results"],
+                "llm_answer": search_result["llm_answer"],
+                "reid_tracks": search_result["reid_tracks"],
+                "results": search_result["results"]
+            }
+        except Exception as e:
+            logger.warning(">>> [query_search] CAUGHT EXCEPTION: %s", e)
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=str(e))
+    except BaseException as be:
         import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-    try:
-        # Run semantic search + identity fusion + LLM reasoning
-        search_result = await service.search(
-            db=db,
-            video_id=request.video_id,
-            query=request.query,
-            top_k=request.top_k,
-            use_llm=request.use_llm
-        )
-
-        # Dispatch async clip extraction tasks for each matched frame
-        # Clips are uploaded to MinIO and presigned URLs are pre-generated
-        for match in search_result["results"]:
-            extract_clip_task.delay(
-                video_id=str(request.video_id),
-                storage_path=video.storage_path,
-                frame_number=match["frame_id"],
-                timestamp_offset=match["timestamp"],
-                clip_duration=6.0
-            )
-
-        return {
-            "query": search_result["query"],
-            "total_results": search_result["total_results"],
-            "llm_answer": search_result["llm_answer"],
-            "reid_tracks": search_result["reid_tracks"],
-            "results": search_result["results"]
-        }
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        tb = traceback.format_exc()
+        logger.warning(">>> [query_search] CAUGHT BASE EXCEPTION: %s", be)
+        return JSONResponse(status_code=500, content={"detail": str(be), "traceback": tb})
 
 
 # ----------------------------------------------------------------------
@@ -413,8 +428,10 @@ async def start_recording(
         camera_id=str(camera_id),
         duration=request.duration,
         chunk_size=request.chunk_size,
-        sampling_rate=request.sampling_rate
+        sampling_rate=request.sampling_rate,
+        burn_bboxes=request.burn_bboxes
     )
+
 
     return {
         "camera_id": str(camera_id),

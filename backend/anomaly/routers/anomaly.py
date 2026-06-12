@@ -71,6 +71,38 @@ async def stop_anomaly_detection(
     return service.stop_anomaly_detection()
 
 
+@anomaly_router.delete("/remove-anomaly/{anomaly_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_anomaly(
+    anomaly_id: int,
+    service: AnomalyService = Depends(get_anomaly_service),
+    current_user: SystemUser = Depends(require_manager),
+):
+    """Deletes an anomaly by ID. Requires Manager or HR role."""
+    success = await service.repository.delete_by_id(anomaly_id)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Anomaly not found")
+
+from pydantic import BaseModel
+class BulkDeleteRequest(BaseModel):
+    ids: list[int]
+
+@anomaly_router.post("/bulk-remove", status_code=status.HTTP_204_NO_CONTENT)
+async def bulk_delete_anomalies(
+    request: BulkDeleteRequest,
+    service: AnomalyService = Depends(get_anomaly_service),
+    current_user: SystemUser = Depends(require_manager),
+):
+    """Deletes multiple anomalies by IDs."""
+    await service.repository.delete_multiple(request.ids)
+
+@anomaly_router.delete("/remove-all", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_all_anomalies(
+    service: AnomalyService = Depends(get_anomaly_service),
+    current_user: SystemUser = Depends(require_manager),
+):
+    """Deletes all anomalies."""
+    await service.repository.delete_all()
+
 @anomaly_router.get("/{anomaly_id}", response_model=AnomalyResponse)
 async def get_anomaly(
     anomaly_id: int,

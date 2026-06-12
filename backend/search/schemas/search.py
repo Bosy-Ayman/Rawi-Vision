@@ -43,6 +43,8 @@ class RecordRequest(BaseModel):
     duration: int = 600       # Total recording time in seconds (default 10 min)
     chunk_size: int = 300     # Size of each chunk in seconds (default 5 min)
     sampling_rate: int = 16   # Frame sampling rate for indexing
+    burn_bboxes: bool = False # Burn bounding boxes into the video chunk
+
 
 
 class RecordingStatusResponse(BaseModel):

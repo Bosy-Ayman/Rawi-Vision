@@ -9,6 +9,7 @@ import './VideoFeed.css';
 
 const VideoFeedPage = () => {
     const [cameras, setCameras] = useState([]);
+    const [activeCameraId, setActiveCameraId] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [hasAccess, setHasAccess] = useState(true);
@@ -30,6 +31,9 @@ const VideoFeedPage = () => {
         ingestionAPI.getAllCameras()
             .then((data) => {
                 setCameras(data || []);
+                if (data && data.length > 0) {
+                    setActiveCameraId(data[0].id || data[0].ip_address || data[0].mac_address);
+                }
                 setLoading(false);
             })
             .catch((err) => {
@@ -38,6 +42,7 @@ const VideoFeedPage = () => {
                 setLoading(false);
             });
     }, []);
+
 
     const handleStartIngestion = async () => {
         setIsActionLoading(true);
@@ -195,11 +200,46 @@ const VideoFeedPage = () => {
                         <div className="vertical-divider" style={{ width: '1px', height: '30px', backgroundColor: '#e1e8ed', margin: '0 10px' }}></div>
 
                     </div>
-                    <div className="camera-grid">
-                        {cameras.map((camera) => (
-                            <CameraCard key={camera.ip_address || camera.mac_address || camera.id} camera={camera} />
-                        ))}
+                    <div className="hog-vision-container">
+                        <div className="hog-vision-main">
+                            <h3 className="hog-vision-title">Selected Stream</h3>
+                            {cameras.find(c => (c.id || c.ip_address || c.mac_address) === activeCameraId) ? (
+                                <CameraCard 
+                                    key={`main-${activeCameraId}`}
+                                    camera={cameras.find(c => (c.id || c.ip_address || c.mac_address) === activeCameraId)} 
+                                />
+                            ) : (
+                                <CameraCard 
+                                    key={`main-default`}
+                                    camera={cameras[0]} 
+                                />
+                            )}
+                        </div>
+                        <div className="hog-vision-sidebar">
+                            <h3 className="hog-vision-title">Camera Sources</h3>
+                            <div className="hog-sidebar-grid">
+                                {cameras.map((camera) => {
+                                    const camId = camera.id || camera.ip_address || camera.mac_address;
+                                    const isActive = camId === activeCameraId;
+                                    return (
+                                        <div 
+                                            key={camId} 
+                                            className={`hog-sidebar-card ${isActive ? 'active' : ''}`}
+                                            onClick={() => setActiveCameraId(camId)}
+                                        >
+                                            <div className="hog-sidebar-card-header">
+                                                <span className={`status-indicator ${isActive ? 'active' : 'inactive'}`}></span>
+                                                <h4>{camera.room || 'Room'}</h4>
+                                            </div>
+                                            <p className="hog-sidebar-card-building">{camera.building || 'Building'}</p>
+                                            <p className="hog-sidebar-card-ip">{camera.ip_address || camera.mac_address}</p>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
                     </div>
+
                 </>
             )}
         </DashboardLayout>

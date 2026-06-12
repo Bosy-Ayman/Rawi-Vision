@@ -300,7 +300,7 @@ class FrameEncoder:
             return self._fallback(frame_rgb, objects, ocr_words, motion_text)
         try:
             img = Image.fromarray(frame_rgb)
-            prompt = "Describe this image in detail, focusing factually on the main action, the people, and the environment. Write only the objective scene description. IMPORTANT: Do NOT mention, describe, or reference any camera names, date/time watermarks, or text overlays (such as 'Camera 01' or timestamps) that appear on the screen."
+            prompt = "Describe this image in detail, focusing factually on the main action, the people, and the environment. Write only the objective scene description. IMPORTANT: Do NOT mention, describe, or reference any camera names, date/time watermarks, or text overlays (such as 'Camera 01' or timestamps) that appear on the screen. Do NOT ask any questions, provide commentary, or add conversational filler."
             messages = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": prompt}]}]
             prompt = self.vlm_proc.apply_chat_template(messages, add_generation_prompt=True)
             inputs = self.vlm_proc(text=prompt, images=img, return_tensors="pt").to(self.device)

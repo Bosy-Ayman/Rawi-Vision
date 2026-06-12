@@ -42,10 +42,11 @@ class AuthService:
             info = id_token.verify_oauth2_token(
                 token,
                 google_requests.Request(),
-                GOOGLE_CLIENT_ID,
+                audience=GOOGLE_CLIENT_ID,
+                clock_skew_in_seconds=10
             )
-        except ValueError:
-            raise ValueError("Invalid or expired Google token.")
+        except ValueError as e:
+            raise ValueError(f"Invalid or expired Google token. Details: {str(e)}")
 
         email: str = info["email"]
         google_sub: str = info["sub"]

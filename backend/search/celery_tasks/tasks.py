@@ -500,7 +500,8 @@ def create_indexed_video_record(video_id: str, camera_id: str, storage_path: str
 
 @celery_app.task(bind=True, name="search.tasks.record_and_index_task")
 def record_and_index_task(self, camera_id: str, duration: int = 600,
-                          chunk_size: int = 300, sampling_rate: int = 16):
+                          chunk_size: int = 300, sampling_rate: int = 16,
+                          burn_bboxes: bool = False):
     """
     Records from a camera RTSP stream in rolling chunks, uploads each chunk
     to MinIO, and auto-dispatches index_video_task per chunk.
@@ -512,7 +513,7 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
     redis_key = f"stop:record:{camera_id}"
     status_key = f"recording:status:{camera_id}"
 
-    print(f"[RECORD] Starting recording for camera_id={camera_id} | duration={duration}s | chunk_size={chunk_size}s")
+    print(f"[RECORD] Starting recording for camera_id={camera_id} | duration={duration}s | chunk_size={chunk_size}s | burn_bboxes={burn_bboxes}")
 
     redis_client.delete(redis_key)
     redis_client.hset(status_key, mapping={
@@ -521,6 +522,53 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
         "chunks_recorded": "0",
         "start_time": str(int(time.time()))
     })
+
+    # AI Overlay models initialization
+    annotator_yolo_person = None
+    annotator_tracker = None
+    annotator_yolo_face = None
+    annotator_resnet = None
+    annotator_face_manager = None
+
+    if burn_bboxes:
+        try:
+            import torch
+            from ultralytics import YOLO
+            from boxmot.trackers.tracker_zoo import create_tracker
+            from facenet_pytorch import InceptionResnetV1
+            import sys
+            
+            # Setup path to load EmbeddingManager
+            backend_dir = Path(__file__).resolve().parent.parent.parent
+            project_dir = backend_dir.parent
+            search_core = project_dir / "ai" / "search" / "core"
+            if str(search_core) not in sys.path:
+                sys.path.insert(0, str(search_core))
+            from embedding_manager import EmbeddingManager
+            
+            device = "cuda:0" if torch.cuda.is_available() else "cpu"
+            weights_dir = project_dir / "backend" / "camera_ingestion" / "ai" / "weights"
+            
+            print(f"[RECORD-AI] Loading YOLO person and tracking models on {device}...")
+            annotator_yolo_person = YOLO(str(weights_dir / "yolov8n.pt")).to(device)
+            annotator_tracker = create_tracker(
+                tracker_type="strongsort",
+                reid_weights=weights_dir / "osnet_x0_25_msmt17.pt",
+                device=device,
+                half=device == "cuda:0"
+            )
+            
+            try:
+                annotator_yolo_face = YOLO(str(weights_dir / "yolov12m-face.pt")).to(device)
+                annotator_resnet = InceptionResnetV1(pretrained="vggface2").to(device).eval()
+                annotator_face_manager = EmbeddingManager(db_config=os.getenv("DATABASE_URL"))
+                annotator_face_manager.load_db_into_memory()
+                print("[RECORD-AI] Face recognition models loaded successfully.")
+            except Exception as fe:
+                print(f"[RECORD-AI] Warning: Face recognition sub-models failed to load: {fe}")
+        except Exception as e:
+            print(f"[RECORD-AI] Error initializing AI Overlay: {e}. Falling back to raw recording.")
+            burn_bboxes = False
 
     try:
         rtsp_urls = lookup_rtsp_urls(camera_id)
@@ -591,8 +639,62 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
                         break
                     continue
 
+                if burn_bboxes and annotator_yolo_person is not None:
+                    try:
+                        import torch
+                        results = annotator_yolo_person(frame, classes=0, verbose=False, conf=0.5)
+                        prev_dets = (
+                            results[0].boxes.data.cpu().numpy()
+                            if len(results[0].boxes) > 0
+                            else np.empty((0, 6))
+                        )
+                        
+                        if prev_dets.shape[0] > 0:
+                            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                            tracks = annotator_tracker.update(prev_dets, rgb)
+                            for track in tracks:
+                                tx1, ty1, tx2, ty2, track_id = map(int, track[:5])
+                                tx1, ty1 = max(0, tx1), max(0, ty1)
+                                tx2, ty2 = min(width, tx2), min(height, ty2)
+                                
+                                name = "Unknown"
+                                if annotator_yolo_face is not None:
+                                    person_crop = frame[ty1:ty2, tx1:tx2]
+                                    if person_crop.size > 0:
+                                        face_res = annotator_yolo_face(person_crop, verbose=False, conf=0.3)
+                                        for fr in face_res:
+                                            for box in fr.boxes:
+                                                fx1, fy1, fx2, fy2 = map(int, box.xyxy[0])
+                                                ph, pw = person_crop.shape[:2]
+                                                fx1, fy1 = max(0, fx1), max(0, fy1)
+                                                fx2, fy2 = min(pw, fx2), min(ph, fy2)
+                                                face_crop = person_crop[fy1:fy2, fx1:fx2]
+                                                if face_crop.size > 0:
+                                                    face_rgb = cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
+                                                    face_resized = cv2.resize(face_rgb, (160, 160))
+                                                    face_norm = face_resized.astype(np.float32) / 255.0
+                                                    face_norm = (face_norm - 0.5) / 0.5
+                                                    face_tensor = torch.tensor(np.transpose(face_norm, (2, 0, 1))).unsqueeze(0).to(device)
+                                                    with torch.no_grad():
+                                                        emb = annotator_resnet(face_tensor).cpu().numpy().squeeze()
+                                                    emp_id, db_name, dist = annotator_face_manager.search_face(emb)
+                                                    if dist < 1.0 and db_name != "Unknown":
+                                                        name = db_name
+                                                        break
+                                
+                                color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
+                                cv2.rectangle(frame, (tx1, ty1), (tx2, ty2), color, 2)
+                                cv2.putText(frame, f"{name} ID:{track_id}",
+                                            (tx1, ty1 - 10),
+                                            cv2.FONT_HERSHEY_SIMPLEX,
+                                            0.6, color, 2)
+                    except Exception as loop_ai_err:
+                        # Fall back gracefully so recording doesn't crash
+                        pass
+
                 out_writer.write(frame)
                 frames_in_chunk += 1
+
 
             out_writer.release()
 

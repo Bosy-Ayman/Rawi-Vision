@@ -3,6 +3,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 import cv2, asyncio
 import logging
+from ..utils.redis import redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -55,9 +56,23 @@ class StreamService:
                 except asyncio.TimeoutError:
                     pass
 
+                # Check Redis for live frame using the exact same identifier logic as ingestion
+                camera_identifier = camera_metadata.ip_address or camera_metadata.mac_address
+                frame_bytes = redis_client.get(f"live_frame:{camera_identifier}")
+                if frame_bytes:
+                    try:
+                        await websocket.send_bytes(frame_bytes)
+                    except (WebSocketDisconnect, RuntimeError):
+                        logger.info("Stream client disconnected for camera %s", camera_ip)
+                        break
+                    await asyncio.sleep(0.033)
+                    continue
+
+                # Fallback to RTSP
                 ret, frame = cap.read()
                 if not ret:
-                    break
+                    await asyncio.sleep(0.1)
+                    continue
                 _, buf = cv2.imencode('.jpg', frame)
                 try:
                     await websocket.send_bytes(buf.tobytes())

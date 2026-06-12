@@ -20,6 +20,7 @@ class IngestionService:
         return cameras if cameras else []
 
     async def start_ingestion(self, duration=120):
+        redis_client.delete("stop_all_cameras")
         task_ids=[]
         cameras = await self.get_online_cameras()
         
@@ -34,7 +35,8 @@ class IngestionService:
             task_id = str(uuid4())
             
             # Start Face Recognition
-            run_face_recognition_logic.delay(self.db_config, rtsp_urls)
+            camera_identifier = camera.ip_address or camera.mac_address
+            run_face_recognition_logic.delay(self.db_config, rtsp_urls, camera_identifier=camera_identifier, task_id=task_id)
             
             # Video recording is currently commented out to save system resources
             # capture_rtsp_video.delay(rtsp_urls, camera.mac_address, task_id, duration=30)
@@ -44,6 +46,7 @@ class IngestionService:
         redis_client.set('task_ids', json.dumps(task_ids))
 
     def stop_ingestion(self):
+        redis_client.set("stop_all_cameras", 1)
         task_ids_json = redis_client.get("task_ids")
         if task_ids_json is None:
             return

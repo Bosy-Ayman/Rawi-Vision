@@ -9,6 +9,7 @@ import Clips from './pages/Clips';
 import EmployeeOnboarding from './pages/EmployeeOnboarding';
 import AllEmployees from './pages/AllEmployees';
 import EmployeeDetails from './pages/EmployeeDetails';
+import EmployeeInsights from './pages/EmployeeInsights';
 import SystemUserManagement from './pages/SystemUserManagement';
 import Settings from './pages/Settings';
 import CustomCursor from './components/CustomCursor';
@@ -41,6 +42,7 @@ function App() {
             <Route path="/dashboard/clips" element={<SubscriptionGuard><Clips /></SubscriptionGuard>} />
             <Route path="/dashboard/employee-onboarding" element={<SubscriptionGuard><EmployeeOnboarding /></SubscriptionGuard>} />
             <Route path="/dashboard/all-employees" element={<SubscriptionGuard><AllEmployees /></SubscriptionGuard>} />
+            <Route path="/dashboard/employee-insights" element={<SubscriptionGuard><EmployeeInsights /></SubscriptionGuard>} />
             <Route path="/dashboard/employee/:id" element={<SubscriptionGuard><EmployeeDetails /></SubscriptionGuard>} />
 
             <Route path="/dashboard/camera-onboarding" element={<SubscriptionGuard><CameraOnboarding /></SubscriptionGuard>} />

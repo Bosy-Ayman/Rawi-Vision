@@ -7,13 +7,18 @@ class AttendanceBase(BaseModel):
     employee_id: UUID
 
 class AttendanceCreate(AttendanceBase):
-    pass
+    camera_id: str | None = None
+    duration_seconds: float = 0.0
 
 class AttendanceResponse(AttendanceBase):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     day: date | None
     date_created: datetime | None
+    last_seen: datetime | None
+    look_count: int
+    camera_id: str | None
+    duration_seconds: float
 
 class AttendanceWithEmployeeResponse(AttendanceResponse):
     first_name: str

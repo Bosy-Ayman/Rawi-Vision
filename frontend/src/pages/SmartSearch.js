@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
 import { searchAPI } from '../api/search';
 import './SmartSearch.css';
 
-const BACKEND_BASE = 'http://127.0.0.1:8000';
+const BACKEND_BASE = 'http://127.0.0.1:8001';
 
 // --------------------------------------------------------------------
 // ClipPlayer: polls /api/search/clip-status until the clip is ready
@@ -151,28 +151,30 @@ const SmartSearch = () => {
         new Set(videos.map(v => v.camera_number).filter(Boolean))
     ).sort();
 
-    const filteredVideos = videos.filter(video => {
-        if (selectedCameraFilter !== 'all') {
-            if (selectedCameraFilter === 'upload') {
-                if (video.camera_number) return false;
-            } else {
-                if (video.camera_number !== selectedCameraFilter) return false;
+    const filteredVideos = useMemo(() => {
+        return videos.filter(video => {
+            if (selectedCameraFilter !== 'all') {
+                if (selectedCameraFilter === 'upload') {
+                    if (video.camera_number) return false;
+                } else {
+                    if (video.camera_number !== selectedCameraFilter) return false;
+                }
             }
-        }
 
-        if (!video.date_created) return true;
-        const videoDate = new Date(video.date_created);
+            if (!video.date_created) return true;
+            const videoDate = new Date(video.date_created);
 
-        if (startDate) {
-            const start = new Date(`${startDate}T${startTime || '00:00'}:00`);
-            if (videoDate < start) return false;
-        }
-        if (endDate) {
-            const end = new Date(`${endDate}T${endTime || '23:59'}:59`);
-            if (videoDate > end) return false;
-        }
-        return true;
-    });
+            if (startDate) {
+                const start = new Date(`${startDate}T${startTime || '00:00'}:00`);
+                if (videoDate < start) return false;
+            }
+            if (endDate) {
+                const end = new Date(`${endDate}T${endTime || '23:59'}:59`);
+                if (videoDate > end) return false;
+            }
+            return true;
+        });
+    }, [videos, selectedCameraFilter, startDate, endDate, startTime, endTime]);
 
     // Auto-select matching videos when filters change
     useEffect(() => {

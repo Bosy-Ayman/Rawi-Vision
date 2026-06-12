@@ -79,21 +79,15 @@ const Sidebar = () => {
                                     className={({ isActive }) => `sidebar-link ${isActive && !isLocked ? 'active' : ''}`}
                                     style={isLocked ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
                                 >
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center' }}>
-                                            <img
-                                                src={`/assets/icons/sidebar/${item.icon}`}
-                                                alt={item.name}
-                                                className="sidebar-icon"
-                                            />
-                                            <span className="sidebar-text">{item.name}</span>
-                                        </div>
-                                        {isLocked && (
-                                            <span style={{ fontSize: '10px', background: '#e67e22', color: '#fff', padding: '2px 6px', borderRadius: '4px', marginLeft: '8px' }}>
-                                                Upgrade
-                                            </span>
-                                        )}
-                                    </div>
+                                    <img
+                                        src={`/assets/icons/sidebar/${item.icon}`}
+                                        alt={item.name}
+                                        className="sidebar-icon"
+                                    />
+                                    <span className="sidebar-text">{item.name}</span>
+                                    {isLocked && (
+                                        <span className="sidebar-upgrade-badge">Upgrade</span>
+                                    )}
                                 </NavLink>
                             </li>
                         );

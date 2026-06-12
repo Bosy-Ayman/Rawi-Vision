@@ -234,10 +234,13 @@ class SearchService:
                     print(f"[WARN] Failed to read events.csv at {p}: {e}")
         return []
 
-    async def search(self, db: AsyncSession, video_id: uuid.UUID, query: str, top_k: int = 10, use_llm: bool = True) -> dict:
+    async def search(self, db: AsyncSession, video_id: uuid.UUID, query: str, top_k: int = 10, use_llm: bool = True) -> Dict[str, Any]:
+        import asyncio
         # Encode query using cached/lazy QueryEncoder
         encoder = QueryEncoder.get_instance()
-        query_vector = encoder.encode(query).tolist()
+        # Run synchronous text encoding in a separate thread
+        query_vector_np = await asyncio.to_thread(encoder.encode, query)
+        query_vector = query_vector_np.tolist()
 
         # Perform pgvector cosine similarity search using SQLAlchemy
         # Vector cosine distance is (1 - CosineSimilarity)
@@ -395,7 +398,8 @@ class SearchService:
                     combined_descriptions.append(tracking_context_str)
                 
                 llm = LLMReasoner.get_instance()
-                llm_answer = llm.answer(query, combined_descriptions)
+                # Run synchronous LLM inference in a separate thread so Uvicorn doesn't freeze
+                llm_answer = await asyncio.to_thread(llm.answer, query, combined_descriptions)
                 
                 # If LLM reasoner determines no matching events, filter out the results
                 if llm_answer == "No matching events or objects found in this video.":
