@@ -115,6 +115,29 @@ def insert_frame(video_id: str, frame_number: int, timestamp_offset: float,
         conn.close()
 
 
+def insert_video_appearance(video_id: str, employee_id: str, frame_number: int,
+                             timestamp_offset: float, confidence: float):
+    """Inserts one row into video_appearances for every detected face in a frame.
+
+    This enables continuous per-frame tracking of identified persons in a video,
+    so a person appearing in 100 frames produces 100 distinct rows.
+    """
+    conn = get_sync_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO video_appearances
+                    (video_id, employee_id, frame_number, timestamp_offset, confidence)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (video_id, employee_id, frame_number, timestamp_offset, confidence)
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 # ----------------------------------------------------------------------
 # MinIO helper — sync downloads
 # ----------------------------------------------------------------------
@@ -253,7 +276,7 @@ def index_video_task(self, video_id: str, storage_path: str, sampling_rate: int 
             timestamp = indexed_frame / fps
 
             try:
-                embedding, full_desc, track_ids = encoder.encode_frame(frame, prev_frame)
+                embedding, full_desc, track_ids, face_detections = encoder.encode_frame(frame, prev_frame)
                 tracks_str = ",".join(map(str, track_ids))
 
                 insert_frame(
@@ -264,6 +287,19 @@ def index_video_task(self, video_id: str, storage_path: str, sampling_rate: int 
                     tracks=tracks_str,
                     embedding=embedding.tolist()
                 )
+
+                # Persist every face detection as a separate video_appearances row
+                for det in face_detections:
+                    try:
+                        insert_video_appearance(
+                            video_id=video_id,
+                            employee_id=det["emp_id"],
+                            frame_number=indexed_frame,
+                            timestamp_offset=timestamp,
+                            confidence=det["confidence"]
+                        )
+                    except Exception as app_err:
+                        print(f"[WARN] video_appearance insert failed: {app_err}")
 
                 if sampled_count % 5 == 0 or indexed_frame >= total_frames:
                     try:

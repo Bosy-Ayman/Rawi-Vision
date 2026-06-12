@@ -334,7 +334,7 @@ class FrameEncoder:
         return desc
 
     def encode_frame(self, frame_bgr: np.ndarray,
-                     prev_frame_bgr: Optional[np.ndarray] = None) -> Tuple[np.ndarray, str, List[int]]:
+                     prev_frame_bgr: Optional[np.ndarray] = None) -> Tuple[np.ndarray, str, List[int], List[dict]]:
         # Tracks
         track_ids = self.track_subjects(frame_bgr)
 
@@ -360,8 +360,8 @@ class FrameEncoder:
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         desc_text = self.describe_vlm(frame_rgb, obj_text, objects, ocr_words, motion_desc)
 
-        # 4. Run Face Recognition
-        identified_names = []
+        # 4. Run Face Recognition — collect one detection dict per face found
+        face_detections = []  # List of {"emp_id": ..., "name": ..., "confidence": ...}
         if self.face_recognition_enabled:
             try:
                 face_results = self.yolo_face(frame_bgr, verbose=False, conf=0.3)
@@ -373,7 +373,6 @@ class FrameEncoder:
                         x2, y2 = min(w, x2), min(h, y2)
                         face_crop = frame_bgr[y1:y2, x1:x2]
                         if face_crop.size > 0:
-                            # Preprocess face
                             face_crop_rgb = cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
                             face_resized = cv2.resize(face_crop_rgb, (160, 160))
                             face_norm = face_resized.astype(np.float32) / 255.0
@@ -383,14 +382,19 @@ class FrameEncoder:
                                 emb = self.resnet(face_tensor).cpu().numpy().squeeze()
                             emp_id, name, dist = self.face_manager.search_face(emb)
                             if dist < 1.0 and name != "Unknown":
-                                identified_names.append(name)
+                                # Store each individual detection with its emp_id and confidence
+                                face_detections.append({
+                                    "emp_id": str(emp_id),
+                                    "name": name,
+                                    "confidence": float(1.0 - dist)  # invert distance -> confidence
+                                })
             except Exception as face_err:
                 print(f"[WARN] Face Recognition failed during frame encoding: {face_err}")
 
-        # If any known people are identified, append them to the description
+        # Build summary for embedding + description
         names_str = "none"
-        if identified_names:
-            unique_names = sorted(list(set(identified_names)))
+        if face_detections:
+            unique_names = sorted(set(d["name"] for d in face_detections))
             names_str = ", ".join(unique_names)
             desc_text = f"{desc_text} Identified person(s): {names_str}."
 
@@ -405,7 +409,7 @@ class FrameEncoder:
         combined = combined / norm
 
         full_desc = f"{desc_text} | {obj_ocr_text} | {motion_text} | {ocr_text} | Identified People: {names_str}"
-        return combined.astype(np.float32), full_desc, track_ids
+        return combined.astype(np.float32), full_desc, track_ids, face_detections
 
 # ----------------------------------------------------------------------
 # Main indexing loop
