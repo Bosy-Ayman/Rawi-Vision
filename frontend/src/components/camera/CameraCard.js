@@ -28,6 +28,24 @@ const CameraCard = ({ camera }) => {
 
     const cardRef = useRef(null);
 
+    // Check initial recording status on mount
+    useEffect(() => {
+        const checkRecordingStatusOnMount = async () => {
+            if (camera.id) {
+                try {
+                    const status = await searchAPI.getRecordingStatus(camera.id);
+                    if (status.status === 'recording') {
+                        setIsRecording(true);
+                        setRecordingChunks(status.chunks_recorded || 0);
+                    }
+                } catch (err) {
+                    console.error("Failed to fetch initial recording status on mount", err);
+                }
+            }
+        };
+        checkRecordingStatusOnMount();
+    }, [camera.id]);
+
     // Poll recording status if recording
     useEffect(() => {
         let interval;
@@ -63,9 +81,7 @@ const CameraCard = ({ camera }) => {
             } else {
                 await searchAPI.startRecording(camera.id, 600, 60, burnBboxes); // Record for 10 mins, chunk 60s
                 setIsRecording(true);
-
                 setRecordingChunks(0);
-                navigate('/dashboard/clips');
             }
         } catch (err) {
             console.error("Recording action failed", err);
@@ -198,9 +214,9 @@ const CameraCard = ({ camera }) => {
             </div>
             
             {isRecording && (
-                <div className="camera-badge" style={{ backgroundColor: '#ef4444', top: '10px', right: '10px', left: 'auto' }}>
-                    <span className="badge-dot" style={{ backgroundColor: 'white' }} />
-                    <span className="badge-label" style={{ color: 'white' }}>REC ({recordingChunks} chunks)</span>
+                <div className="camera-badge camera-badge--recording" style={{ top: '10px', right: '10px', left: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span className="badge-dot" style={{ backgroundColor: '#ffffff', width: '8px', height: '8px', borderRadius: '50%' }} />
+                    <span className="badge-label" style={{ color: 'white', fontWeight: 'bold' }}>REC ({recordingChunks} {recordingChunks === 1 ? 'chunk' : 'chunks'})</span>
                 </div>
             )}
 
