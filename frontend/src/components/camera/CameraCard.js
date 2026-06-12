@@ -21,6 +21,7 @@ const CameraCard = ({ camera }) => {
     
     // Recording state
     const [isRecording, setIsRecording] = useState(false);
+    const [isStopping, setIsStopping] = useState(false);
     const [recordingChunks, setRecordingChunks] = useState(0);
     const [isActionLoading, setIsActionLoading] = useState(false);
     const [burnBboxes, setBurnBboxes] = useState(false);
@@ -53,16 +54,18 @@ const CameraCard = ({ camera }) => {
             interval = setInterval(async () => {
                 try {
                     const status = await searchAPI.getRecordingStatus(camera.id);
-                    if (status.status === 'recording') {
+                    if (status.status === 'recording' || status.status === 'stopping') {
                         setRecordingChunks(status.chunks_recorded || 0);
+                        setIsStopping(status.status === 'stopping');
                     } else if (status.status === 'not_found' || status.status === 'completed' || status.status === 'failed') {
                         setIsRecording(false);
+                        setIsStopping(false);
                         clearInterval(interval);
                     }
                 } catch (err) {
                     console.error("Failed to poll recording status", err);
                 }
-            }, 5000);
+            }, 3000);
         }
         return () => clearInterval(interval);
     }, [isRecording, camera.id]);
@@ -76,11 +79,13 @@ const CameraCard = ({ camera }) => {
         try {
             if (isRecording) {
                 await searchAPI.stopRecording(camera.id);
-                setIsRecording(false);
-                alert("Recording stop signal sent. It will finish the current chunk.");
+                // Don't flip isRecording immediately — let the poll confirm it stopped
+                // (the task finishes the current chunk before actually stopping)
+                setIsStopping(true);
             } else {
                 await searchAPI.startRecording(camera.id, 600, 60, burnBboxes); // Record for 10 mins, chunk 60s
                 setIsRecording(true);
+                setIsStopping(false);
                 setRecordingChunks(0);
             }
         } catch (err) {
@@ -215,8 +220,10 @@ const CameraCard = ({ camera }) => {
             
             {isRecording && (
                 <div className="camera-badge camera-badge--recording" style={{ top: '10px', right: '10px', left: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <span className="badge-dot" style={{ backgroundColor: '#ffffff', width: '8px', height: '8px', borderRadius: '50%' }} />
-                    <span className="badge-label" style={{ color: 'white', fontWeight: 'bold' }}>REC ({recordingChunks} {recordingChunks === 1 ? 'chunk' : 'chunks'})</span>
+                    <span className="badge-dot" style={{ backgroundColor: isStopping ? '#f59e0b' : '#ffffff', width: '8px', height: '8px', borderRadius: '50%' }} />
+                    <span className="badge-label" style={{ color: 'white', fontWeight: 'bold' }}>
+                        {isStopping ? `STOPPING (${recordingChunks} ${recordingChunks === 1 ? 'chunk' : 'chunks'})` : `REC (${recordingChunks} ${recordingChunks === 1 ? 'chunk' : 'chunks'})`}
+                    </span>
                 </div>
             )}
 
@@ -241,11 +248,11 @@ const CameraCard = ({ camera }) => {
                     <button
                         className="camera-ctrl-btn"
                         onClick={handleRecordToggle}
-                        disabled={isActionLoading}
-                        title={isRecording ? 'Stop Recording AI' : 'Record & Index AI'}
-                        style={{ color: isRecording ? '#ef4444' : 'inherit', fontWeight: 'bold' }}
+                        disabled={isActionLoading || isStopping}
+                        title={isRecording ? (isStopping ? 'Stopping...' : 'Stop Recording AI') : 'Record & Index AI'}
+                        style={{ color: isRecording ? (isStopping ? '#f59e0b' : '#ef4444') : 'inherit', fontWeight: 'bold' }}
                     >
-                        {isRecording ? '⏹ REC' : '⏺ AI REC'}
+                        {isRecording ? (isStopping ? '⏳ STOPPING' : '⏹ REC') : '⏺ AI REC'}
                     </button>
 
                     <button

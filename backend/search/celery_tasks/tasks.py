@@ -515,7 +515,6 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
 
     print(f"[RECORD] Starting recording for camera_id={camera_id} | duration={duration}s | chunk_size={chunk_size}s | burn_bboxes={burn_bboxes}")
 
-    redis_client.delete(redis_key)
     redis_client.hset(status_key, mapping={
         "status": "recording",
         "camera_id": camera_id,
@@ -602,7 +601,6 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
         while (time.time() - total_start) < duration:
             if redis_client.get(redis_key):
                 print(f"[RECORD] Stop signal received for camera {camera_id}")
-                redis_client.delete(redis_key)
                 break
 
             chunk_id = str(uuid.uuid4())
@@ -746,6 +744,10 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
             "elapsed_seconds": str(elapsed)
         })
         redis_client.expire(status_key, 3600)
+        try:
+            redis_client.delete(redis_key)
+        except Exception:
+            pass
 
         return {
             "status": "completed",

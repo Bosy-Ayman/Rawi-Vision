@@ -423,6 +423,12 @@ async def start_recording(
             detail=f"Camera {camera_id} is already being recorded. Stop it first."
         )
 
+    # IMPORTANT: Always clear any lingering stop signal before starting a new recording.
+    # If a previous recording was stopped, the stop key might still be in Redis and would
+    # cause the new task to exit immediately on the very first loop iteration.
+    stop_key = f"stop:record:{camera_id}"
+    redis_client.delete(stop_key)
+
     # Dispatch the Celery background recording task
     record_and_index_task.delay(
         camera_id=str(camera_id),
@@ -431,7 +437,6 @@ async def start_recording(
         sampling_rate=request.sampling_rate,
         burn_bboxes=request.burn_bboxes
     )
-
 
     return {
         "camera_id": str(camera_id),
@@ -457,9 +462,15 @@ async def stop_recording(camera_id: uuid.UUID):
     redis_key = f"stop:record:{camera_id}"
     redis_client.set(redis_key, "1")
 
-    # Clear status key immediately to unlock the camera for new recordings instantly
+    # Mark status as "stopping" so the UI knows the stop was acknowledged,
+    # but DO NOT delete the status key — let the Celery task clean it up
+    # when it finishes the current chunk. Deleting it here caused a race
+    # condition where the next start_recording call could fire before the
+    # old task had cleaned up, resulting in the new task seeing a stale
+    # stop signal and exiting immediately.
     status_key = f"recording:status:{camera_id}"
-    redis_client.delete(status_key)
+    if redis_client.exists(status_key):
+        redis_client.hset(status_key, "status", "stopping")
 
     return {
         "camera_id": str(camera_id),
@@ -499,7 +510,7 @@ async def get_active_recordings(db: db_dependency):
         except Exception as e:
             print(f"[ERROR] Failed to hgetall key {k} from Redis: {e}")
             continue
-        if data and data.get("status") == "recording":
+        if data and data.get("status") in ("recording", "stopping"):
             cam_id = data.get("camera_id")
             cam_info = camera_map.get(str(cam_id), {})
             active.append({
