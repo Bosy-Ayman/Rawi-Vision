@@ -161,7 +161,12 @@ class FrameEncoder:
         # 2. Load YOLO model
         from ultralytics import YOLO
         print("[INFO] Loading YOLO model on CPU...")
-        self.yolo_model = YOLO("yolov8x.pt")
+        root_dir = Path(__file__).resolve().parent.parent.parent.parent
+        backend_dir = root_dir / "backend"
+        yolo_path = backend_dir / "yolov8x.pt"
+        if not yolo_path.exists():
+            yolo_path = root_dir / "yolov8x.pt"
+        self.yolo_model = YOLO(str(yolo_path))
         self.yolo_model = self.yolo_model.to("cpu")
 
         # 3. Load EasyOCR reader
@@ -178,6 +183,38 @@ class FrameEncoder:
         from sentence_transformers import SentenceTransformer
         print("[INFO] Loading embedding model on CPU...")
         self.emb_model = SentenceTransformer(EMBEDDING_MODEL, device="cpu")
+
+        # 5. Load Face Recognition if database config/environment is available
+        self.face_recognition_enabled = False
+        try:
+            import sys
+            root_dir = Path(__file__).resolve().parent.parent.parent.parent
+            backend_dir = root_dir / "backend"
+            if str(backend_dir) not in sys.path:
+                sys.path.insert(0, str(backend_dir))
+            
+            from camera_ingestion.ai.embedding_manager import EmbeddingManager
+            from facenet_pytorch import InceptionResnetV1
+            from ultralytics import YOLO
+            
+            print("[INFO] Loading Face Recognition components...")
+            db_config = {
+                "host": os.getenv("DB_HOST", "127.0.0.1"),
+                "port": int(os.getenv("DB_PORT", 5433)),
+                "dbname": os.getenv("DB_NAME", "rawivision_db"),
+                "user": os.getenv("DB_USER", "postgres"),
+                "password": os.getenv("DB_PASSWORD", "postgres"),
+            }
+            self.face_manager = EmbeddingManager(db_config=db_config)
+            self.face_manager.load_db_into_memory()
+            
+            face_weights = backend_dir / "camera_ingestion" / "ai" / "weights" / "yolov12m-face.pt"
+            self.yolo_face = YOLO(str(face_weights)).to("cpu")
+            self.resnet = InceptionResnetV1(pretrained="vggface2").to("cpu").eval()
+            self.face_recognition_enabled = True
+            print("[INFO] Face Recognition components loaded successfully on CPU")
+        except Exception as e:
+            print(f"[WARN] Failed to load Face Recognition: {e}")
 
         print("[INFO] FrameEncoder ready")
 
@@ -322,6 +359,39 @@ class FrameEncoder:
         # VLM caption (falls back to premium synthesis if offline)
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         desc_text = self.describe_vlm(frame_rgb, obj_text, objects, ocr_words, motion_desc)
+
+        # 4. Run Face Recognition
+        identified_names = []
+        if self.face_recognition_enabled:
+            try:
+                face_results = self.yolo_face(frame_bgr, verbose=False, conf=0.3)
+                for r in face_results:
+                    for box in r.boxes:
+                        x1, y1, x2, y2 = map(int, box.xyxy[0])
+                        h, w = frame_bgr.shape[:2]
+                        x1, y1 = max(0, x1), max(0, y1)
+                        x2, y2 = min(w, x2), min(h, y2)
+                        face_crop = frame_bgr[y1:y2, x1:x2]
+                        if face_crop.size > 0:
+                            # Preprocess face
+                            face_crop_rgb = cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
+                            face_resized = cv2.resize(face_crop_rgb, (160, 160))
+                            face_norm = face_resized.astype(np.float32) / 255.0
+                            face_norm = (face_norm - 0.5) / 0.5
+                            face_tensor = torch.tensor(np.transpose(face_norm, (2, 0, 1))).unsqueeze(0).to("cpu")
+                            with torch.no_grad():
+                                emb = self.resnet(face_tensor).cpu().numpy().squeeze()
+                            emp_id, name, dist = self.face_manager.search_face(emb)
+                            if dist < 1.0 and name != "Unknown":
+                                identified_names.append(name)
+            except Exception as face_err:
+                print(f"[WARN] Face Recognition failed during frame encoding: {face_err}")
+
+        # If any known people are identified, append them to the description
+        if identified_names:
+            unique_names = sorted(list(set(identified_names)))
+            names_str = ", ".join(unique_names)
+            desc_text = f"{desc_text} Identified person(s): {names_str}."
 
         # Embed each textual component
         emb_obj = self.emb_model.encode(obj_ocr_text, convert_to_numpy=True)
