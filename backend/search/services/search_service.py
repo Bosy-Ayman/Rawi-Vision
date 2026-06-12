@@ -34,7 +34,7 @@ class QueryEncoder:
     def __init__(self):
         import torch
         from sentence_transformers import SentenceTransformer
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = "cpu"
         print(f"[INFO] Loading SentenceTransformer query encoder model: {EMBEDDING_MODEL} on {device}...")
         self.emb_model = SentenceTransformer(EMBEDDING_MODEL, device=device)
         print("[INFO] SentenceTransformer model loaded successfully.")
@@ -118,12 +118,11 @@ class LLMReasoner:
         # If no direct keyword match, run Yes/No validation using LLM
         is_match = True
         if not has_direct_word_match:
-            prompt_val = (
-                f"System: You are an AI analyzing security descriptions.\n"
-                f"Context:\n{fused_visual}\n\n"
-                f"Question: Does the Context above contain any description, mention, or objects related to '{query}'? Reply with only 'Yes' or 'No'.\n"
-                f"Answer:"
-            )
+            messages_val = [
+                {"role": "system", "content": "You are an AI analyzing security descriptions."},
+                {"role": "user", "content": f"Context:\n{fused_visual}\n\nQuestion: Does the Context contain any description, mention, or objects related to '{query}'? Reply with only 'Yes' or 'No'."}
+            ]
+            prompt_val = self.tokenizer.apply_chat_template(messages_val, tokenize=False, add_generation_prompt=True)
             inputs_val = self.tokenizer(prompt_val, return_tensors="pt", truncation=True, max_length=1024)
             inputs_val = {k: v.to(self.model.device) for k, v in inputs_val.items()}
             with torch.no_grad():
@@ -131,7 +130,7 @@ class LLMReasoner:
                     **inputs_val,
                     max_new_tokens=5,
                     do_sample=False,
-                    repetition_penalty=1.3,
+                    repetition_penalty=1.1,
                     pad_token_id=self.tokenizer.pad_token_id,
                     eos_token_id=self.tokenizer.eos_token_id,
                 )
@@ -144,18 +143,21 @@ class LLMReasoner:
             return "No matching events or objects found in this video."
 
         # Step 2: Factual Summary Generation (Run only if validated as a match)
-        # Construct a simpler, direct prompt that works reliably with small 0.5B models
-        prompt = (
-            f"You are a factual video metadata analyzer. You must report only what is explicitly present in the provided Visual Metadata Context. Do not speculate, guess, or assume activities (like stealing, theft, or crimes) unless they are explicitly stated in the context.\n\n"
-            f"Visual Metadata Context:\n{fused_visual}\n"
+        system_content = (
+            "You are a factual video metadata analyzer. You must report only what is explicitly present in the provided context. "
+            "Do not speculate, guess, or assume activities (like stealing, theft, or crimes) unless they are explicitly stated. "
+            "Write a concise 2-sentence factual summary of the event based ONLY on the context."
         )
+        user_content = f"Visual Metadata Context:\n{fused_visual}\n"
         if fused_tracking:
-            prompt += f"\nTracking Context:\n{fused_tracking}\n"
-            
-        prompt += (
-            f"\nQuestion: {query}\n\n"
-            f"Write a concise 2-sentence factual summary of the event based ONLY on the context above:\n"
-        )
+            user_content += f"\nTracking Context:\n{fused_tracking}\n"
+        user_content += f"\nQuestion: {query}"
+        
+        messages = [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": user_content}
+        ]
+        prompt = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
         inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=1024)
         inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
@@ -165,7 +167,7 @@ class LLMReasoner:
                 **inputs,
                 max_new_tokens=max_new_tokens,
                 do_sample=False,
-                repetition_penalty=1.3,
+                repetition_penalty=1.1,
                 no_repeat_ngram_size=4,
                 pad_token_id=self.tokenizer.pad_token_id,
                 eos_token_id=self.tokenizer.eos_token_id,

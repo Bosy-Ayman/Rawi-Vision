@@ -136,6 +136,7 @@ const SmartSearch = () => {
     const [query, setQuery] = useState('');
     const [videos, setVideos] = useState([]);
     const [selectedVideos, setSelectedVideos] = useState([]);
+    const [selectedCameraFilter, setSelectedCameraFilter] = useState('all');
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const [results, setResults] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -146,7 +147,19 @@ const SmartSearch = () => {
     const [endTime, setEndTime] = useState('');
     const dropdownRef = useRef(null);
 
+    const availableCameras = Array.from(
+        new Set(videos.map(v => v.camera_number).filter(Boolean))
+    ).sort();
+
     const filteredVideos = videos.filter(video => {
+        if (selectedCameraFilter !== 'all') {
+            if (selectedCameraFilter === 'upload') {
+                if (video.camera_number) return false;
+            } else {
+                if (video.camera_number !== selectedCameraFilter) return false;
+            }
+        }
+
         if (!video.date_created) return true;
         const videoDate = new Date(video.date_created);
 
@@ -160,6 +173,11 @@ const SmartSearch = () => {
         }
         return true;
     });
+
+    // Auto-select matching videos when filters change
+    useEffect(() => {
+        setSelectedVideos(filteredVideos.map(v => v.video_id));
+    }, [filteredVideos]);
 
     const activeVideosToSearch = selectedVideos.filter(id => filteredVideos.some(v => v.video_id === id));
 
@@ -317,6 +335,21 @@ const SmartSearch = () => {
                 <div className="search-card">
                     {/* Step 1: Configuration (Video selection & Time filters) */}
                     <div className="search-config-grid">
+                        <div className="config-item camera-filter-group">
+                            <label className="config-label">📹 Camera Filter</label>
+                            <select
+                                className="video-select"
+                                value={selectedCameraFilter}
+                                onChange={(e) => setSelectedCameraFilter(e.target.value)}
+                            >
+                                <option value="all">All Sources</option>
+                                <option value="upload">📂 Manual Uploads</option>
+                                {availableCameras.map(cam => (
+                                    <option key={cam} value={cam}>📹 {cam}</option>
+                                ))}
+                            </select>
+                        </div>
+
                         <div className="config-item video-selection-group" ref={dropdownRef}>
                             <label className="config-label">📁 Video Streams</label>
                             <div className="multi-select-container">
@@ -414,7 +447,7 @@ const SmartSearch = () => {
                             </div>
                         </div>
 
-                        {(startDate || endDate || startTime || endTime) && (
+                        {(startDate || endDate || startTime || endTime || selectedCameraFilter !== 'all') && (
                             <div className="config-item reset-group">
                                 <button 
                                     className="clear-filters-btn" 
@@ -423,6 +456,7 @@ const SmartSearch = () => {
                                         setEndDate('');
                                         setStartTime('');
                                         setEndTime('');
+                                        setSelectedCameraFilter('all');
                                     }}
                                 >
                                     Reset

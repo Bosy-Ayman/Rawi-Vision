@@ -11,12 +11,17 @@ Task 2: extract_clip_task
     - Downloads the video from MinIO
     - Uses OpenCV to extract a 6-second clip around a target timestamp
     - Uploads the clip back to MinIO under 'extracted-search-clips'
+
+Task 3: record_and_index_task
+    - Records from a camera RTSP stream in rolling chunks
+    - Uploads each chunk to MinIO and auto-dispatches index_video_task
 """
 
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
+from pathlib import Path
 from dotenv import load_dotenv
-load_dotenv()
+env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+load_dotenv(dotenv_path=env_path)
 import io
 import gc
 import uuid
@@ -24,16 +29,42 @@ import time
 import json
 import tempfile
 import psycopg2
-from pathlib import Path
 from typing import Optional
-from celery import Celery
 
-# Celery app is initialized from the existing project broker
-celery_app = Celery(
-    "search_tasks",
-    broker=os.getenv("BROKER_URL", "amqp://guest:guest@127.0.0.1:5672//"),
-    backend=f"redis://{os.getenv('REDIS_HOST', 'localhost')}:{os.getenv('REDIS_PORT', 6379)}/1"
-)
+# ----------------------------------------------------------------------
+# Import the SHARED Celery app from utils.celery_client so this worker
+# and the FastAPI router use the exact same app instance + broker config.
+# This is what fixes tasks being sent but never received.
+# ----------------------------------------------------------------------
+from utils.celery_client import celery_app
+
+
+# ----------------------------------------------------------------------
+# Redis helper — defined FIRST so every task below can call it
+# ----------------------------------------------------------------------
+
+def get_redis_client():
+    import redis
+    return redis.Redis(
+        host=os.getenv("REDIS_HOST", "localhost"),
+        port=int(os.getenv("REDIS_PORT", 6379)),
+        db=0,
+        decode_responses=True
+    )
+
+
+# ----------------------------------------------------------------------
+# Queue routing — all three tasks go through the default "celery" queue
+# so the worker picks them up without needing extra -Q flags.
+# If you later want dedicated queues, add -Q indexing_queue etc. to the
+# worker start command AND update task_routes here consistently.
+# ----------------------------------------------------------------------
+celery_app.conf.task_routes = {
+    "search.tasks.index_video_task":        {"queue": "celery"},
+    "search.tasks.extract_clip_task":       {"queue": "celery"},
+    "search.tasks.record_and_index_task":   {"queue": "celery"},
+}
+
 
 # ----------------------------------------------------------------------
 # DB helper — uses psycopg2 directly (Celery workers are sync)
@@ -42,8 +73,7 @@ celery_app = Celery(
 def get_sync_db_conn():
     host = os.getenv("DB_HOST", "localhost")
     if host == "localhost":
-        host = "127.0.0.1"  # Force IPv4 to prevent psycopg2 Software caused connection abort on ::1
-        
+        host = "127.0.0.1"  # Force IPv4 to avoid psycopg2 ::1 issues on Windows
     return psycopg2.connect(
         host=host,
         port=int(os.getenv("DB_PORT", 5432)),
@@ -74,7 +104,8 @@ def insert_frame(video_id: str, frame_number: int, timestamp_offset: float,
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO video_frames (video_id, frame_number, timestamp_offset, description, tracks, embedding)
+                INSERT INTO video_frames
+                    (video_id, frame_number, timestamp_offset, description, tracks, embedding)
                 VALUES (%s, %s, %s, %s, %s, %s::vector)
                 """,
                 (video_id, frame_number, timestamp_offset, description, tracks, json.dumps(embedding))
@@ -90,7 +121,11 @@ def insert_frame(video_id: str, frame_number: int, timestamp_offset: float,
 
 def get_minio_client():
     from minio import Minio
-    minio_url = os.getenv("MINIO_SERVER_URL", "127.0.0.1:9000").replace("http://", "").replace("https://", "")
+    minio_url = (
+        os.getenv("MINIO_SERVER_URL", "127.0.0.1:9000")
+        .replace("http://", "")
+        .replace("https://", "")
+    )
     return Minio(
         minio_url,
         access_key=os.getenv("MINIO_ROOT_USER", "minioadmin"),
@@ -114,13 +149,8 @@ _GLOBAL_ENCODER = None
 @celery_app.task(bind=True, name="search.tasks.index_video_task", max_retries=1)
 def index_video_task(self, video_id: str, storage_path: str, sampling_rate: int = 16):
     """
-    Downloads video from MinIO, extracts frame embeddings using the FrameEncoder
-    from ai/search/core/offline_index.py, and stores them in PostgreSQL.
-
-    Args:
-        video_id: UUID string of the IndexedVideo record
-        storage_path: MinIO object key (e.g. 'camera-archive-videos/uuid.mp4')
-        sampling_rate: Analyze every N-th frame (default 16)
+    Downloads video from MinIO, extracts frame embeddings using FrameEncoder,
+    and stores them in PostgreSQL.
     """
     import cv2
     import sys
@@ -128,10 +158,11 @@ def index_video_task(self, video_id: str, storage_path: str, sampling_rate: int 
     print(f"[TASK] Starting video indexing for video_id={video_id}")
     update_video_status(video_id, "indexing")
 
+    redis_client = get_redis_client()
+
     try:
         minio = get_minio_client()
 
-        # Download video to a temp file — needed since OpenCV reads from file paths
         bucket_name = "camera-archive-videos"
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_file:
             tmp_path = tmp_file.name
@@ -140,8 +171,7 @@ def index_video_task(self, video_id: str, storage_path: str, sampling_rate: int 
         minio.fget_object(bucket_name, storage_path, tmp_path)
         print(f"[TASK] Video downloaded to temp: {tmp_path}")
 
-        # Dynamically import FrameEncoder from ai/search/core/offline_index.py
-        # Walk up directories to locate the ai/search/core path
+        # Locate ai/search/core and add to sys.path
         backend_dir = Path(__file__).resolve().parent.parent.parent  # backend/
         project_dir = backend_dir.parent                              # project root
         search_core = project_dir / "ai" / "search" / "core"
@@ -155,21 +185,26 @@ def index_video_task(self, video_id: str, storage_path: str, sampling_rate: int 
 
         global _GLOBAL_ENCODER
         if _GLOBAL_ENCODER is None:
-            # Check GPU availability
             import torch
             device_to_use = "cpu"
             if torch.cuda.is_available() and torch.cuda.device_count() > 0:
-                free_vram = torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated(0)
-                if free_vram > 2 * 1024 ** 3:
+                try:
+                    free_vram, _ = torch.cuda.mem_get_info()
+                except Exception:
+                    free_vram = (
+                        torch.cuda.get_device_properties(0).total_memory
+                        - torch.cuda.memory_allocated(0)
+                    )
+                if free_vram > 2.5 * 1024 ** 3:
                     device_to_use = "cuda"
                 else:
-                    print("[WARN] GPU VRAM heavily occupied — FrameEncoder will handle fallback dynamically")
-            
-            print(f"[TASK] Initializing global FrameEncoder (always enabling VLM, device hint: {device_to_use})")
-            _GLOBAL_ENCODER = FrameEncoder(use_vlm=True)
+                    print(f"[WARN] Low VRAM ({free_vram / 1024**3:.2f} GB free) — using CPU")
+
+            print(f"[TASK] Initializing global FrameEncoder (device={device_to_use})")
+            _GLOBAL_ENCODER = FrameEncoder(use_vlm=True, device=device_to_use)
         else:
-            print("[TASK] Re-using already initialized global FrameEncoder")
-        
+            print("[TASK] Re-using cached global FrameEncoder")
+
         encoder = _GLOBAL_ENCODER
 
         cap = cv2.VideoCapture(tmp_path)
@@ -179,6 +214,25 @@ def index_video_task(self, video_id: str, storage_path: str, sampling_rate: int 
         fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         print(f"[TASK] FPS={fps:.1f} | Total frames={total_frames} | Sampling every {sampling_rate} frames")
+
+        # Init Redis progress tracking
+        progress_key = f"indexing:progress:{video_id}"
+        try:
+            redis_client.hset(progress_key, mapping={
+                "progress_percent": "0",
+                "frames_processed": "0",
+                "total_frames": str(total_frames)
+            })
+            redis_client.expire(progress_key, 3600)
+        except Exception as e:
+            print(f"[WARN] Failed to init Redis progress: {e}")
+
+        # Store task_id so the video can be revoked on delete
+        try:
+            redis_client.set(f"indexing:task_id:{video_id}", self.request.id)
+            redis_client.expire(f"indexing:task_id:{video_id}", 86400)
+        except Exception as e:
+            print(f"[WARN] Failed to store task_id in Redis: {e}")
 
         indexed_frame = 0
         sampled_count = 0
@@ -202,7 +256,6 @@ def index_video_task(self, video_id: str, storage_path: str, sampling_rate: int 
                 embedding, full_desc, track_ids = encoder.encode_frame(frame, prev_frame)
                 tracks_str = ",".join(map(str, track_ids))
 
-                # Insert into postgres
                 insert_frame(
                     video_id=video_id,
                     frame_number=indexed_frame,
@@ -212,8 +265,21 @@ def index_video_task(self, video_id: str, storage_path: str, sampling_rate: int 
                     embedding=embedding.tolist()
                 )
 
+                if sampled_count % 5 == 0 or indexed_frame >= total_frames:
+                    try:
+                        total_sampled = max(1, total_frames // sampling_rate)
+                        pct = min(100, int((sampled_count / total_sampled) * 100))
+                        redis_client.hset(progress_key, mapping={
+                            "progress_percent": str(pct),
+                            "frames_processed": str(sampled_count),
+                            "total_frames": str(total_frames)
+                        })
+                    except Exception:
+                        pass
+
                 if sampled_count % 10 == 0:
-                    print(f"[TASK] [{sampled_count}] Frame {indexed_frame}/{total_frames} @ {timestamp:.2f}s | {full_desc[:60]}...")
+                    print(f"[TASK] Frame {indexed_frame}/{total_frames} @ {timestamp:.2f}s | {full_desc[:60]}...")
+
             except Exception as frame_err:
                 print(f"[WARN] Frame {indexed_frame} encoding failed: {frame_err}")
 
@@ -221,27 +287,41 @@ def index_video_task(self, video_id: str, storage_path: str, sampling_rate: int 
 
         cap.release()
 
-        # Clean up temp file
         try:
             os.unlink(tmp_path)
         except Exception:
             pass
 
-        # Clean up model memory
         import torch
-        del encoder
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
         elapsed = round(time.time() - start, 1)
         print(f"[TASK] Indexing complete: {sampled_count} frames in {elapsed}s for video_id={video_id}")
+
+        try:
+            redis_client.hset(progress_key, "progress_percent", "100")
+            redis_client.delete(f"indexing:task_id:{video_id}")
+        except Exception:
+            pass
+
         update_video_status(video_id, "completed")
         return {"status": "completed", "frames_indexed": sampled_count, "elapsed_seconds": elapsed}
 
     except Exception as e:
         print(f"[ERROR] index_video_task failed for video_id={video_id}: {e}")
         update_video_status(video_id, "failed")
+
+        err_msg = str(e).lower()
+        if "nosuchkey" in err_msg or "does not exist" in err_msg:
+            print(f"[ERROR] Object {storage_path} not found in MinIO. Skipping retry.")
+            try:
+                redis_client.delete(f"indexing:task_id:{video_id}")
+            except Exception:
+                pass
+            return {"status": "failed", "error": "file_not_found"}
+
         raise self.retry(exc=e, countdown=10)
 
 
@@ -253,16 +333,7 @@ def index_video_task(self, video_id: str, storage_path: str, sampling_rate: int 
 def extract_clip_task(self, video_id: str, storage_path: str, frame_number: int,
                       timestamp_offset: float, clip_duration: float = 6.0):
     """
-    Cuts a short clip of 'clip_duration' seconds centred on 'timestamp_offset'
-    from the original video in MinIO and uploads the result to
-    'extracted-search-clips' bucket.
-
-    Args:
-        video_id: UUID string of the IndexedVideo record
-        storage_path: MinIO source object key
-        frame_number: Frame number of the match (used in output filename)
-        timestamp_offset: Time in seconds of the match within the video
-        clip_duration: Length of clip in seconds (default 6)
+    Cuts a short clip centred on timestamp_offset and uploads it to MinIO.
     """
     import cv2
 
@@ -271,7 +342,6 @@ def extract_clip_task(self, video_id: str, storage_path: str, frame_number: int,
     try:
         minio = get_minio_client()
 
-        # Download source video to temp file
         bucket_name = "camera-archive-videos"
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_file:
             src_tmp_path = tmp_file.name
@@ -292,14 +362,12 @@ def extract_clip_task(self, video_id: str, storage_path: str, frame_number: int,
         start_frame = int(start_time * fps)
         end_frame = int(end_time * fps)
 
-        # Target resolution: Scale to height 720 (HD), keeping aspect ratio
         target_height = 720
-        aspect_ratio = width / height if height > 0 else 16/9
+        aspect_ratio = width / height if height > 0 else 16 / 9
         target_width = int(target_height * aspect_ratio)
         if target_width % 2 != 0:
-            target_width += 1  # ensure width is even for codecs
+            target_width += 1
 
-        # Write clip to a second temp file
         with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as clip_tmp:
             clip_tmp_path = clip_tmp.name
 
@@ -319,8 +387,9 @@ def extract_clip_task(self, video_id: str, storage_path: str, frame_number: int,
         cap.release()
         out_writer.release()
 
-        # Upload clip to MinIO
-        clip_object_name = f"extracted_clips/{video_id}/clip_frame_{frame_number}_{timestamp_offset:.2f}s.webm"
+        clip_object_name = (
+            f"extracted_clips/{video_id}/clip_frame_{frame_number}_{timestamp_offset:.2f}s.webm"
+        )
         ensure_bucket(minio, "extracted-search-clips")
         minio.fput_object(
             bucket_name="extracted-search-clips",
@@ -331,7 +400,6 @@ def extract_clip_task(self, video_id: str, storage_path: str, frame_number: int,
 
         print(f"[TASK] Clip uploaded to MinIO: {clip_object_name}")
 
-        # Clean up temp files
         for p in [src_tmp_path, clip_tmp_path]:
             try:
                 os.unlink(p)
@@ -349,22 +417,8 @@ def extract_clip_task(self, video_id: str, storage_path: str, frame_number: int,
 # Task 3: record_and_index_task — Rolling RTSP recorder + auto-indexing
 # ----------------------------------------------------------------------
 
-def get_redis_client():
-    import redis
-    return redis.Redis(
-        host=os.getenv("REDIS_HOST", "localhost"),
-        port=int(os.getenv("REDIS_PORT", 6379)),
-        db=0,
-        decode_responses=True
-    )
-
-
 def lookup_rtsp_urls(camera_id: str) -> list:
-    """
-    Looks up RTSP URLs for a camera by joining cameras → camera_metadata.
-    cameras.id (UUID) → cameras.mac_address → camera_metadata.mac_address → rtsp_urls (JSON).
-    Uses psycopg2 since Celery workers are synchronous.
-    """
+    """Looks up RTSP URLs for a camera via psycopg2 (sync)."""
     conn = get_sync_db_conn()
     try:
         with conn.cursor() as cur:
@@ -381,7 +435,6 @@ def lookup_rtsp_urls(camera_id: str) -> list:
             row = cur.fetchone()
             if not row:
                 raise RuntimeError(f"No camera_metadata found for camera_id={camera_id}")
-            # rtsp_urls is stored as JSON array in PostgreSQL
             urls = row[0]
             if isinstance(urls, str):
                 urls = json.loads(urls)
@@ -391,14 +444,15 @@ def lookup_rtsp_urls(camera_id: str) -> list:
 
 
 def create_indexed_video_record(video_id: str, camera_id: str, storage_path: str,
-                                 filename: str, sampling_rate: int):
-    """Creates an IndexedVideo row directly via psycopg2 (sync, for Celery)."""
+                                filename: str, sampling_rate: int):
+    """Creates an IndexedVideo row directly via psycopg2 (sync)."""
     conn = get_sync_db_conn()
     try:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO indexed_videos (id, camera_id, storage_path, filename, status, sampling_rate)
+                INSERT INTO indexed_videos
+                    (id, camera_id, storage_path, filename, status, sampling_rate)
                 VALUES (%s, %s, %s, %s, 'pending', %s)
                 """,
                 (video_id, camera_id, storage_path, filename, sampling_rate)
@@ -412,17 +466,9 @@ def create_indexed_video_record(video_id: str, camera_id: str, storage_path: str
 def record_and_index_task(self, camera_id: str, duration: int = 600,
                           chunk_size: int = 300, sampling_rate: int = 16):
     """
-    Records from a camera's RTSP stream in rolling chunks, uploads each chunk
-    to MinIO, creates an IndexedVideo record, and auto-dispatches
-    index_video_task for each chunk.
-
+    Records from a camera RTSP stream in rolling chunks, uploads each chunk
+    to MinIO, and auto-dispatches index_video_task per chunk.
     Stoppable via Redis key: stop:record:{camera_id}
-
-    Args:
-        camera_id: UUID string of the camera (from 'cameras' table)
-        duration: Total recording duration in seconds (default 600 = 10 min)
-        chunk_size: Duration of each chunk in seconds (default 300 = 5 min)
-        sampling_rate: Frame sampling rate for indexing (default 16)
     """
     import cv2
 
@@ -432,7 +478,7 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
 
     print(f"[RECORD] Starting recording for camera_id={camera_id} | duration={duration}s | chunk_size={chunk_size}s")
 
-    # Mark recording as active in Redis
+    redis_client.delete(redis_key)
     redis_client.hset(status_key, mapping={
         "status": "recording",
         "camera_id": camera_id,
@@ -441,25 +487,23 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
     })
 
     try:
-        # Look up RTSP URLs from the database
         rtsp_urls = lookup_rtsp_urls(camera_id)
         print(f"[RECORD] Found RTSP URLs: {rtsp_urls}")
 
-        # Try each RTSP URL until one opens
         cap = None
         for url in rtsp_urls:
             cap = cv2.VideoCapture(url)
             if cap.isOpened():
                 print(f"[RECORD] Connected to RTSP stream: {url}")
                 break
+
         if cap is None or not cap.isOpened():
-            print(f"[RECORD] Could not open any RTSP stream for camera {camera_id}. Falling back to mock video for testing.")
+            print(f"[RECORD] Could not open any RTSP stream. Falling back to mock video.")
             mock_video_path = r"c:\Users\pouss\Documents\CSAI\Rawi-Vision\ai\search\videos\shoplifting.mp4"
             cap = cv2.VideoCapture(mock_video_path)
             if not cap.isOpened():
                 raise RuntimeError(f"Could not open mock video: {mock_video_path}")
-            else:
-                print(f"[RECORD] Mock video stream opened successfully from {mock_video_path}")
+            print(f"[RECORD] Mock video stream opened: {mock_video_path}")
 
         fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -472,19 +516,16 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
         chunks_recorded = 0
 
         while (time.time() - total_start) < duration:
-            # Check for stop signal
             if redis_client.get(redis_key):
                 print(f"[RECORD] Stop signal received for camera {camera_id}")
                 redis_client.delete(redis_key)
                 break
 
-            # Start a new chunk
             chunk_id = str(uuid.uuid4())
             chunk_timestamp = int(time.time())
             chunk_filename = f"{camera_id}_{chunk_timestamp}.webm"
             storage_path = f"{camera_id}/{chunk_filename}"
 
-            # Write chunk to a temp file
             with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp_file:
                 tmp_path = tmp_file.name
 
@@ -496,7 +537,6 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
             print(f"[RECORD] Recording chunk #{chunks_recorded + 1}: {chunk_filename}")
 
             while (time.time() - chunk_start) < chunk_size:
-                # Check stop signal mid-chunk
                 if redis_client.get(redis_key):
                     print(f"[RECORD] Stop signal received mid-chunk for camera {camera_id}")
                     break
@@ -521,14 +561,12 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
             out_writer.release()
 
             if frames_in_chunk == 0:
-                # Empty chunk — skip upload
                 try:
                     os.unlink(tmp_path)
                 except Exception:
                     pass
                 continue
 
-            # Upload chunk to MinIO
             print(f"[RECORD] Uploading chunk to MinIO: {storage_path} ({frames_in_chunk} frames)")
             minio.fput_object(
                 bucket_name="camera-archive-videos",
@@ -537,7 +575,6 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
                 content_type="video/webm"
             )
 
-            # Create IndexedVideo DB record
             create_indexed_video_record(
                 video_id=chunk_id,
                 camera_id=camera_id,
@@ -546,11 +583,9 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
                 sampling_rate=sampling_rate
             )
 
-            # Auto-dispatch indexing task for this chunk
             index_video_task.delay(chunk_id, storage_path, sampling_rate)
             print(f"[RECORD] Indexing task dispatched for chunk {chunk_id}")
 
-            # Clean up temp file
             try:
                 os.unlink(tmp_path)
             except Exception:
@@ -559,7 +594,6 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
             chunks_recorded += 1
             redis_client.hset(status_key, "chunks_recorded", str(chunks_recorded))
 
-            # Check if total duration has been exceeded
             if (time.time() - total_start) >= duration:
                 break
 
@@ -568,13 +602,11 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
         elapsed = round(time.time() - total_start, 1)
         print(f"[RECORD] Recording complete: {chunks_recorded} chunks in {elapsed}s for camera {camera_id}")
 
-        # Update Redis status
         redis_client.hset(status_key, mapping={
             "status": "completed",
             "chunks_recorded": str(chunks_recorded),
             "elapsed_seconds": str(elapsed)
         })
-        # Expire the status key after 1 hour
         redis_client.expire(status_key, 3600)
 
         return {

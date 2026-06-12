@@ -30,6 +30,13 @@ class VideoStatusResponse(BaseModel):
     status: str
     sampling_rate: int
     date_created: datetime
+    progress_percent: Optional[int] = 0
+    frames_processed: Optional[int] = 0
+    total_frames: Optional[int] = 0
+    camera_room: Optional[str] = None
+    camera_building: Optional[str] = None
+    camera_number: Optional[str] = None
+
 
 
 class RecordRequest(BaseModel):
@@ -45,4 +52,11 @@ class RecordingStatusResponse(BaseModel):
     start_time: Optional[int] = None
     elapsed_seconds: Optional[float] = None
     error: Optional[str] = None
+
+
+class VideoFrameResponse(BaseModel):
+    frame_number: int
+    timestamp_offset: float
+    description: str
+
 

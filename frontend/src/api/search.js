@@ -63,6 +63,12 @@ export const searchAPI = {
         });
     },
 
+    getVideoFrames: (videoId) => {
+        return apiClient(`/api/search/video/${videoId}/frames`, {
+            method: 'GET',
+        });
+    },
+
     /**
      * Helper to poll video indexing status until it's completed or failed
      */
@@ -121,6 +127,12 @@ export const searchAPI = {
 
     getRecordingStatus: (cameraId) => {
         return apiClient(`/api/search/record/${cameraId}/status`, {
+            method: 'GET',
+        });
+    },
+
+    getActiveRecordings: () => {
+        return apiClient('/api/search/record/active', {
             method: 'GET',
         });
     },

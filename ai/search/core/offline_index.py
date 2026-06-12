@@ -122,14 +122,15 @@ class FAISSIdx:
 # ----------------------------------------------------------------------
 
 class FrameEncoder:
-    def __init__(self, use_vlm: bool = True):
+    def __init__(self, use_vlm: bool = True, device: Optional[str] = None):
+        self.device = device if device is not None else DEVICE
         # 1. Load VLM first when memory is completely fresh and unfragmented
         self.vlm = None
         self.vlm_proc = None
         if use_vlm:
-            print("[INFO] Loading VLM (this may take a minute)...")
+            print(f"[INFO] Loading VLM on {self.device} (this may take a minute)...")
             try:
-                if DEVICE == "cuda":
+                if self.device == "cuda":
                     from transformers import BitsAndBytesConfig
                     quantization_config = BitsAndBytesConfig(
                         load_in_4bit=True,
@@ -147,7 +148,7 @@ class FrameEncoder:
                 else:
                     self.vlm = AutoModelForImageTextToText.from_pretrained(
                         VLM_MODEL,
-                        torch_dtype=torch.bfloat16,
+                        torch_dtype=torch.float32,
                         trust_remote_code=True,
                         low_cpu_mem_usage=True
                     )
@@ -160,7 +161,7 @@ class FrameEncoder:
         # 2. Load YOLO model
         from ultralytics import YOLO
         print("[INFO] Loading YOLO model on CPU...")
-        self.yolo_model = YOLO("yolov8m.pt")
+        self.yolo_model = YOLO("yolov8x.pt")
         self.yolo_model = self.yolo_model.to("cpu")
 
         # 3. Load EasyOCR reader
@@ -182,7 +183,7 @@ class FrameEncoder:
 
     def detect_objects(self, frame_bgr: np.ndarray) -> List[str]:
         try:
-            results = self.yolo_model(frame_bgr, verbose=False)
+            results = self.yolo_model(frame_bgr, conf=0.5, verbose=False)
             objects = set()
             for r in results:
                 for cls_id in r.boxes.cls:
@@ -210,7 +211,7 @@ class FrameEncoder:
     def track_subjects(self, frame_bgr: np.ndarray) -> List[int]:
         try:
             # Persistent multi-object tracking via YOLOv8 built-in ByteTrack/BoT-SORT
-            results = self.yolo_model.track(frame_bgr, persist=True, verbose=False)
+            results = self.yolo_model.track(frame_bgr, persist=True, conf=0.5, verbose=False)
             track_ids = []
             for r in results:
                 if r.boxes is not None and r.boxes.id is not None:
@@ -262,16 +263,14 @@ class FrameEncoder:
             return self._fallback(frame_rgb, objects, ocr_words, motion_text)
         try:
             img = Image.fromarray(frame_rgb)
-            prompt = "Describe this image in detail, including the person's appearance, clothing colors, objects, actions, and spatial relations."
-            if object_hint:
-                prompt += f" Detected objects: {object_hint}."
+            prompt = "Describe this image in detail, focusing factually on the main action, the people, and the environment. Write only the objective scene description. IMPORTANT: Do NOT mention, describe, or reference any camera names, date/time watermarks, or text overlays (such as 'Camera 01' or timestamps) that appear on the screen."
             messages = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": prompt}]}]
             prompt = self.vlm_proc.apply_chat_template(messages, add_generation_prompt=True)
-            inputs = self.vlm_proc(text=prompt, images=img, return_tensors="pt").to(DEVICE)
+            inputs = self.vlm_proc(text=prompt, images=img, return_tensors="pt").to(self.device)
             with torch.no_grad():
                 out = self.vlm.generate(
                     **inputs,
-                    max_new_tokens=120,
+                    max_new_tokens=256,
                     do_sample=False,
                     repetition_penalty=1.2
                 )

@@ -300,7 +300,7 @@
 
 @media (min-width: 768px) {
     .search-config-grid {
-        grid-template-columns: 1.2fr 1.5fr 1.5fr auto;
+        grid-template-columns: 1fr 1.2fr 1.5fr 1.5fr auto;
     }
 }
 

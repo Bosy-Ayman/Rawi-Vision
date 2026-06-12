@@ -24,11 +24,22 @@ from minio import Minio
 from database import get_db, db_dependency
 from config import Config
 from search.models.search import IndexedVideo, VideoFrame
-from search.schemas.search import SearchQueryRequest, SearchQueryResponse, VideoStatusResponse, RecordRequest, RecordingStatusResponse
+from camera_onboarding.models.camera import Camera
+from search.schemas.search import SearchQueryRequest, SearchQueryResponse, VideoStatusResponse, RecordRequest, RecordingStatusResponse, VideoFrameResponse
 from search.services.search_service import SearchService
 from search.celery_tasks.tasks import index_video_task, extract_clip_task, record_and_index_task
 
 search_router = APIRouter(prefix="/api/search", tags=["semantic video search"])
+
+
+def get_redis_client():
+    import redis
+    return redis.Redis(
+        host=Config.REDIS_HOST or "localhost",
+        port=int(Config.REDIS_PORT or 6379),
+        db=0,
+        decode_responses=True
+    )
 
 
 # ----------------------------------------------------------------------
@@ -101,7 +112,12 @@ async def upload_video(
     await db.commit()
 
     # Dispatch Celery background indexing task
-    index_video_task.delay(str(video_id), storage_path, sampling_rate)
+    task = index_video_task.delay(str(video_id), storage_path, sampling_rate)
+    try:
+        redis_client = get_redis_client()
+        redis_client.set(f"indexing:task_id:{video_id}", task.id)
+    except Exception as e:
+        print(f"[WARN] Failed to save task_id to Redis: {e}")
 
     return {
         "video_id": str(video_id),
@@ -124,10 +140,46 @@ async def get_video_status(video_id: uuid.UUID, db: db_dependency):
     if not video:
         raise HTTPException(status_code=404, detail=f"Video {video_id} not found.")
 
-    # Count how many frames have been indexed so far
-    count_stmt = select(VideoFrame).filter(VideoFrame.video_id == video_id)
-    count_result = await db.execute(count_stmt)
-    frames_count = len(count_result.scalars().all())
+    # Retrieve progress from Redis if indexing
+    redis_client = get_redis_client()
+    progress_key = f"indexing:progress:{video_id}"
+    progress_data = {}
+    try:
+        progress_data = redis_client.hgetall(progress_key)
+    except Exception:
+        pass
+
+    progress_percent = 0
+    frames_processed = 0
+    total_frames = 0
+    
+    if progress_data:
+        progress_percent = int(progress_data.get("progress_percent", 0))
+        frames_processed = int(progress_data.get("frames_processed", 0))
+        total_frames = int(progress_data.get("total_frames", 0))
+    elif video.status == "completed":
+        progress_percent = 100
+
+    camera_room = None
+    camera_building = None
+    camera_number = None
+
+    if video.camera_id and str(video.camera_id) != "00000000-0000-0000-0000-000000000000":
+        cam_stmt = select(Camera).filter(Camera.id == video.camera_id)
+        cam_result = await db.execute(cam_stmt)
+        camera = cam_result.scalar_one_or_none()
+        if camera:
+            camera_room = camera.room
+            camera_building = camera.building
+            
+            # Stable camera numbering based on creation date
+            all_cams_stmt = select(Camera).order_by(Camera.date_created.asc())
+            all_cams_result = await db.execute(all_cams_stmt)
+            all_cameras = all_cams_result.scalars().all()
+            for idx, cam in enumerate(all_cameras):
+                if cam.id == camera.id:
+                    camera_number = f"Camera {idx + 1}"
+                    break
 
     return VideoStatusResponse(
         video_id=video.id,
@@ -135,6 +187,12 @@ async def get_video_status(video_id: uuid.UUID, db: db_dependency):
         status=video.status,
         sampling_rate=video.sampling_rate,
         date_created=video.date_created,
+        progress_percent=progress_percent,
+        frames_processed=frames_processed,
+        total_frames=total_frames,
+        camera_room=camera_room,
+        camera_building=camera_building,
+        camera_number=camera_number
     )
 
 
@@ -214,17 +272,55 @@ async def list_videos(db: db_dependency):
     result = await db.execute(stmt)
     videos = result.scalars().all()
 
-    return [
-        {
+    # Fetch all cameras to construct a map of camera_id -> (room, building, name/number)
+    cams_stmt = select(Camera).order_by(Camera.date_created.asc())
+    cams_result = await db.execute(cams_stmt)
+    all_cameras = cams_result.scalars().all()
+    camera_map = {}
+    for idx, cam in enumerate(all_cameras):
+        camera_map[str(cam.id)] = {
+            "room": cam.room,
+            "building": cam.building,
+            "number": f"Camera {idx + 1}"
+        }
+
+    redis_client = get_redis_client()
+
+    results = []
+    for v in videos:
+        progress_percent = 0
+        frames_processed = 0
+        total_frames = 0
+        if v.status == "indexing":
+            progress_key = f"indexing:progress:{v.id}"
+            try:
+                progress_data = redis_client.hgetall(progress_key)
+                if progress_data:
+                    progress_percent = int(progress_data.get("progress_percent", 0))
+                    frames_processed = int(progress_data.get("frames_processed", 0))
+                    total_frames = int(progress_data.get("total_frames", 0))
+            except Exception:
+                pass
+        elif v.status == "completed":
+            progress_percent = 100
+
+        cam_info = camera_map.get(str(v.camera_id), {})
+
+        results.append({
             "video_id": str(v.id),
             "camera_id": str(v.camera_id),
             "filename": v.filename,
             "status": v.status,
             "sampling_rate": v.sampling_rate,
-            "date_created": v.date_created.isoformat()
-        }
-        for v in videos
-    ]
+            "date_created": v.date_created.isoformat(),
+            "progress_percent": progress_percent,
+            "frames_processed": frames_processed,
+            "total_frames": total_frames,
+            "camera_room": cam_info.get("room"),
+            "camera_building": cam_info.get("building"),
+            "camera_number": cam_info.get("number")
+        })
+    return results
 
 
 # ----------------------------------------------------------------------
@@ -270,6 +366,18 @@ async def delete_video(
     await db.delete(video)
     await db.commit()
 
+    # Revoke/Cancel the Celery task if it is currently indexing or pending
+    try:
+        redis_client = get_redis_client()
+        task_id = redis_client.get(f"indexing:task_id:{video_id}")
+        if task_id:
+            from search.celery_tasks.tasks import celery_app
+            celery_app.control.revoke(task_id, terminate=True)
+            redis_client.delete(f"indexing:task_id:{video_id}")
+            print(f"[INFO] Revoked Celery task {task_id} for video {video_id}")
+    except Exception as e:
+        print(f"[WARN] Failed to revoke Celery task for video {video_id}: {e}")
+
     return {"message": f"Video {video_id} and all associated frames/clips have been deleted."}
 
 
@@ -289,13 +397,7 @@ async def start_recording(
     The recording runs as a Celery background task and can be stopped
     early via POST /api/search/record/{camera_id}/stop.
     """
-    import redis
-    redis_client = redis.Redis(
-        host=os.getenv("REDIS_HOST", "localhost"),
-        port=int(os.getenv("REDIS_PORT", 6379)),
-        db=0,
-        decode_responses=True
-    )
+    redis_client = get_redis_client()
 
     # Check if already recording this camera
     status_key = f"recording:status:{camera_id}"
@@ -333,21 +435,67 @@ async def stop_recording(camera_id: uuid.UUID):
     Sends a stop signal to an active recording task for the given camera.
     The current chunk will finish writing and uploading before the task exits.
     """
-    import redis
-    redis_client = redis.Redis(
-        host=os.getenv("REDIS_HOST", "localhost"),
-        port=int(os.getenv("REDIS_PORT", 6379)),
-        db=0,
-        decode_responses=True
-    )
+    redis_client = get_redis_client()
 
     redis_key = f"stop:record:{camera_id}"
     redis_client.set(redis_key, "1")
+
+    # Clear status key immediately to unlock the camera for new recordings instantly
+    status_key = f"recording:status:{camera_id}"
+    redis_client.delete(status_key)
 
     return {
         "camera_id": str(camera_id),
         "message": "Stop signal sent. Recording will finish current chunk and stop."
     }
+
+
+@search_router.get("/record/active")
+async def get_active_recordings(db: db_dependency):
+    """
+    Returns a list of all active recording sessions across all cameras.
+    """
+    redis_client = get_redis_client()
+
+    active = []
+    try:
+        keys = redis_client.keys("recording:status:*")
+    except Exception as e:
+        print(f"[ERROR] Failed to query active recordings from Redis: {e}")
+        return active
+    
+    # Query all cameras to map camera_id -> room, building, camera_number
+    cams_stmt = select(Camera).order_by(Camera.date_created.asc())
+    cams_result = await db.execute(cams_stmt)
+    all_cameras = cams_result.scalars().all()
+    camera_map = {}
+    for idx, cam in enumerate(all_cameras):
+        camera_map[str(cam.id)] = {
+            "room": cam.room,
+            "building": cam.building,
+            "number": f"Camera {idx + 1}"
+        }
+
+    for k in keys:
+        try:
+            data = redis_client.hgetall(k)
+        except Exception as e:
+            print(f"[ERROR] Failed to hgetall key {k} from Redis: {e}")
+            continue
+        if data and data.get("status") == "recording":
+            cam_id = data.get("camera_id")
+            cam_info = camera_map.get(str(cam_id), {})
+            active.append({
+                "camera_id": cam_id,
+                "status": "recording",
+                "chunks_recorded": int(data.get("chunks_recorded", 0)),
+                "start_time": int(data["start_time"]) if "start_time" in data else None,
+                "camera_room": cam_info.get("room"),
+                "camera_building": cam_info.get("building"),
+                "camera_number": cam_info.get("number")
+            })
+            
+    return active
 
 
 # ----------------------------------------------------------------------
@@ -360,13 +508,7 @@ async def get_recording_status(camera_id: uuid.UUID):
     Returns the current status of a recording session for a camera.
     Status is tracked in Redis and expires 1 hour after completion.
     """
-    import redis
-    redis_client = redis.Redis(
-        host=os.getenv("REDIS_HOST", "localhost"),
-        port=int(os.getenv("REDIS_PORT", 6379)),
-        db=0,
-        decode_responses=True
-    )
+    redis_client = get_redis_client()
 
     status_key = f"recording:status:{camera_id}"
     data = redis_client.hgetall(status_key)
@@ -464,4 +606,28 @@ async def stream_full_video(video_id: uuid.UUID, db: db_dependency):
         return RedirectResponse(url)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating stream URL: {e}")
+
+
+@search_router.get("/video/{video_id}/frames", response_model=List[VideoFrameResponse])
+async def get_video_frames(video_id: uuid.UUID, db: db_dependency):
+    """Retrieves all indexed frames and descriptions for a specific video, sorted chronologically."""
+    stmt = select(IndexedVideo).filter(IndexedVideo.id == video_id)
+    result = await db.execute(stmt)
+    video = result.scalar_one_or_none()
+    
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+        
+    stmt_frames = select(VideoFrame).filter(VideoFrame.video_id == video_id).order_by(VideoFrame.frame_number.asc())
+    result_frames = await db.execute(stmt_frames)
+    frames = result_frames.scalars().all()
+    
+    return [
+        VideoFrameResponse(
+            frame_number=f.frame_number,
+            timestamp_offset=f.timestamp_offset,
+            description=f.description
+        ) for f in frames
+    ]
+
 

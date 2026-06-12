@@ -56,6 +56,43 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+from fastapi import HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError, ResponseValidationError
+import traceback
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    tb = traceback.format_exc()
+    print("REQUEST VALIDATION ERROR:", str(exc))
+    return JSONResponse(
+        status_code=422,
+        content={"detail": str(exc), "errors": exc.errors(), "body": exc.body}
+    )
+
+@app.exception_handler(ResponseValidationError)
+async def response_validation_exception_handler(request, exc):
+    tb = traceback.format_exc()
+    print("RESPONSE VALIDATION ERROR:", str(exc))
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc), "errors": exc.errors()}
+    )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    if isinstance(exc, HTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail}
+        )
+    tb = traceback.format_exc()
+    print("GLOBAL EXCEPTION:", tb)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc), "traceback": tb}
+    )
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],

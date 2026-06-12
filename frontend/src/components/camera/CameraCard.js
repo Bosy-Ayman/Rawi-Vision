@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { BASE_URL } from '../../api/client';
 import { searchAPI } from '../../api/search';
 
@@ -6,6 +7,7 @@ const WS_BASE = BASE_URL.replace(/^http/, 'ws') + '/stream';
 const MAX_RECONNECT_ATTEMPTS = 5;
 
 const CameraCard = ({ camera }) => {
+    const navigate = useNavigate();
     const canvasRef = useRef(null);
     const wsRef = useRef(null);
     const reconnectTimerRef = useRef(null);
@@ -60,6 +62,7 @@ const CameraCard = ({ camera }) => {
                 await searchAPI.startRecording(camera.id, 600, 60); // Record for 10 mins, chunk 60s
                 setIsRecording(true);
                 setRecordingChunks(0);
+                navigate('/dashboard/clips');
             }
         } catch (err) {
             console.error("Recording action failed", err);
