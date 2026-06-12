@@ -388,6 +388,7 @@ class FrameEncoder:
                 print(f"[WARN] Face Recognition failed during frame encoding: {face_err}")
 
         # If any known people are identified, append them to the description
+        names_str = "none"
         if identified_names:
             unique_names = sorted(list(set(identified_names)))
             names_str = ", ".join(unique_names)
@@ -403,7 +404,7 @@ class FrameEncoder:
         norm = np.linalg.norm(combined) + 1e-8
         combined = combined / norm
 
-        full_desc = f"{desc_text} | {obj_ocr_text} | {motion_text} | {ocr_text}"
+        full_desc = f"{desc_text} | {obj_ocr_text} | {motion_text} | {ocr_text} | Identified People: {names_str}"
         return combined.astype(np.float32), full_desc, track_ids
 
 # ----------------------------------------------------------------------
