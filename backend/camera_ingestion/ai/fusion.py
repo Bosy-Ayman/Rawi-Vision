@@ -141,13 +141,11 @@ def run_pipeline(
                         logger.log(f"employee id{emp_id}")
                         if dist < threshold and name != "Unknown":
                             with identity_lock:
-                                previous = identity_map.get(track_id)
                                 identity_map[track_id] = name
-                            if previous != name:
-                                with current_app.pool.acquire(block=True) as conn:
-                                    producer = Producer(conn, exchange=exchange)
-                                    producer.publish({'emp_id': emp_id}, routing_key="attendance.detected", serializer='json', content_type='application/json',)
-                                logger.log("FACE_IDENTIFIED", track_id=track_id, name=name, distance=dist)
+                            with current_app.pool.acquire(block=True) as conn:
+                                producer = Producer(conn, exchange=exchange)
+                                producer.publish({'emp_id': emp_id}, routing_key="attendance.detected", serializer='json', content_type='application/json',)
+                            logger.log("FACE_IDENTIFIED", track_id=track_id, name=name, distance=dist)
                         else:
                             with current_app.pool.acquire(block=True) as conn:
                                     producer = Producer(conn, exchange=exchange)
