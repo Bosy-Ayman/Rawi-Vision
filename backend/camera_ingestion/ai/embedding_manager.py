@@ -22,9 +22,11 @@ class EmbeddingManager:
         self.names_map = {}
         conn = psycopg2.connect(**self.db_config)
         cursor = conn.cursor()
+
         cursor.execute("SELECT id, first_name, last_name, embedding FROM employees")
         rows = cursor.fetchall()
-        for idx, (emp_id, first_name, last_name, embedding) in enumerate(rows):
+
+        for idx, (employee_id,first_name, last_name, embedding) in enumerate(rows):
             full_name = f"{first_name} {last_name}"
             if not embedding:
                 print(f"Skipping {full_name}: empty embedding")
@@ -41,7 +43,7 @@ class EmbeddingManager:
                 print(f"Skipping {full_name}: wrong dimension {vector.shape[1]}")
                 continue
             self.index.add(vector)
-            self.names_map[idx] = {"id": emp_id, "name": full_name}
+            self.names_map[idx] = {"name": full_name, "id": employee_id}
             print(f"Loaded: {full_name} (ID: {idx})")
         cursor.close()
         conn.close()
@@ -50,11 +52,13 @@ class EmbeddingManager:
     def search_face(self, embedding_vector):
         vector_to_search = np.array([embedding_vector]).astype('float32')
         if self.index.ntotal == 0:
-            return "Unknown", 99.9
+           return "Unknown", None,  99.9  # Added None to match the 3-value format
         distances, indices = self.index.search(vector_to_search, k=1)
         idx = indices[0][0]
         dist = distances[0][0]
         if idx == -1:
-            return "Unknown", dist
-        result = self.names_map.get(idx, {})
-        return result.get("id"), result.get("name", "Unknown"), dist
+            return "Unknown", None, dist
+        entry = self.names_map.get(idx)
+        if entry is None:
+            return "Unknown", None, dist
+        return entry["name"], entry["id"], dist

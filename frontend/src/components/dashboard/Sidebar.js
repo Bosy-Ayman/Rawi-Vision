@@ -2,9 +2,12 @@ import React from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { authAPI } from '../../api/auth';
 
+import { useSubscription } from '../../context/SubscriptionContext';
+
 const Sidebar = () => {
     const location = useLocation();
     const navigate = useNavigate();
+    const { capabilities } = useSubscription();
 
     const handleLogout = async (e) => {
         e.preventDefault();
@@ -32,10 +35,11 @@ const Sidebar = () => {
 
     const standardMenuItems = [
         { name: 'Video Feed', icon: 'video-feed.svg', path: '/dashboard/video-feed' },
-        { name: 'Smart Search', icon: 'smart-search.svg', path: '/dashboard/smart-search' },
+        { name: 'Smart Search', icon: 'smart-search.svg', path: '/dashboard/smart-search', requiredCapability: 'search' },
         { name: 'Anomalies', icon: 'anomalies.svg', path: '/dashboard/anomalies' },
         { name: 'Dashboard', icon: 'dashboard.svg', path: '/dashboard/main' },
         { name: 'Clips', icon: 'employee-insights.svg', path: '/dashboard/clips' },
+        { name: 'Employee insights', icon: 'employee-insights.svg', path: '/dashboard/employee-insights', requiredCapability: 'summarization' },
         { name: 'Settings', icon: 'settings.svg', path: '/dashboard/settings' }
     ];
 
@@ -60,21 +64,40 @@ const Sidebar = () => {
 
             <nav className="sidebar-nav">
                 <ul>
-                    {menuItems.map((item) => (
-                        <li key={item.name}>
-                            <NavLink
-                                to={item.path}
-                                className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
-                            >
-                                <img
-                                    src={`/assets/icons/sidebar/${item.icon}`}
-                                    alt={item.name}
-                                    className="sidebar-icon"
-                                />
-                                <span className="sidebar-text">{item.name}</span>
-                            </NavLink>
-                        </li>
-                    ))}
+                    {menuItems.map((item) => {
+                        const isLocked = item.requiredCapability && !capabilities[item.requiredCapability];
+                        return (
+                            <li key={item.name}>
+                                <NavLink
+                                    to={isLocked ? '#' : item.path}
+                                    onClick={(e) => {
+                                        if (isLocked) {
+                                            e.preventDefault();
+                                            alert(`The '${item.name}' feature is locked. Please upgrade your subscription plan.`);
+                                        }
+                                    }}
+                                    className={({ isActive }) => `sidebar-link ${isActive && !isLocked ? 'active' : ''}`}
+                                    style={isLocked ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+                                >
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                                            <img
+                                                src={`/assets/icons/sidebar/${item.icon}`}
+                                                alt={item.name}
+                                                className="sidebar-icon"
+                                            />
+                                            <span className="sidebar-text">{item.name}</span>
+                                        </div>
+                                        {isLocked && (
+                                            <span style={{ fontSize: '10px', background: '#e67e22', color: '#fff', padding: '2px 6px', borderRadius: '4px', marginLeft: '8px' }}>
+                                                Upgrade
+                                            </span>
+                                        )}
+                                    </div>
+                                </NavLink>
+                            </li>
+                        );
+                    })}
                 </ul>
             </nav>
 

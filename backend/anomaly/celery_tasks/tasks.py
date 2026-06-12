@@ -12,7 +12,7 @@ from camera_ingestion.utils.redis import redis_client
 # -------------------------- Config -------------------------------------------
 STAGE1_MODEL_ID = "Nikeytas/videomae-crime-detector-fixed-format"
 STAGE1_ANOMALY_IDX = 1
-STAGE1_THRESHOLD = 0.5
+STAGE1_THRESHOLD = 0.55
 
 STAGE3_MODEL_ID = "HuggingFaceTB/SmolVLM-Instruct"
 STAGE3_COOLDOWN = 5.0
@@ -21,7 +21,7 @@ STAGE3_NUM_BEAMS = 1
 
 VIDEO_WINDOW = 16
 FRAME_SIZE = (224, 224)
-INFER_EVERY_N = 16
+INFER_EVERY_N = 90
 
 KAFKA_BROKER = "localhost:29092"
 KAFKA_TOPIC = "anomaly-incidents"
@@ -49,7 +49,7 @@ def load_models():
         AutoModelForVideoClassification,
         AutoImageProcessor,
         AutoProcessor,
-        AutoModelForVision2Seq,
+        AutoModelForImageTextToText,
         BitsAndBytesConfig,
     )
     from confluent_kafka import Producer as KafkaProducer
@@ -61,7 +61,7 @@ def load_models():
     s1_model = AutoModelForVideoClassification.from_pretrained(STAGE1_MODEL_ID).to(DEVICE).eval()
 
     s3_processor = AutoProcessor.from_pretrained(STAGE3_MODEL_ID)
-    s3_model = AutoModelForVision2Seq.from_pretrained(
+    s3_model = AutoModelForImageTextToText.from_pretrained(
         STAGE3_MODEL_ID,
         quantization_config=BitsAndBytesConfig(
             load_in_4bit=True,
@@ -165,13 +165,16 @@ def run_anomaly_detection(rtsp_url: str, camera_mac: str, task_id: str):
                 s1_probs = run_videomae(list(frame_buffer))
                 s1_score = s1_probs[STAGE1_ANOMALY_IDX].item()
                 
+                print(f"[Heartbeat] Background check complete -> Anomaly Score: {s1_score:.4f} (Threshold: {STAGE1_THRESHOLD})")
+                
                 if s1_score > STAGE1_THRESHOLD:
                     now = time.time()
                     if (now - last_vlm_time) > STAGE3_COOLDOWN:
                         snap = sharpest_frame(list(vlm_frame_buffer))
                         pil_img = Image.fromarray(snap)
                         
-                        prompt = "Detect and classify the anomaly in this surveillance frame. Output format: [ANOMALY_TYPE] Brief description."
+                        # Ask the VLM to explain the scene regardless of anomalies
+                        prompt = "First, describe any human activity in this surveillance frame in detail (ignore watermarks). Second, classify the activity by appending exactly one of these tags at the end: [normal], [violence], [theft], [trespassing], [vandalism], or [unusual_behavior]. If no crime is occurring, use [normal]."
                         messages = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": prompt}]}]
                         text_input = s3_processor.apply_chat_template(messages, add_generation_prompt=True)
                         inputs = s3_processor(images=[pil_img], text=text_input, return_tensors="pt").to(DEVICE)
@@ -181,8 +184,10 @@ def run_anomaly_detection(rtsp_url: str, camera_mac: str, task_id: str):
                         
                         raw = s3_processor.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True).strip()
                         anomaly_type = extract_anomaly_type(raw)
-                        print(f"!!! ANOMALY DETECTED [{anomaly_type}]: {raw}")
-                        publish_incident_event(snap, anomaly_type, raw, s1_score, camera_mac)
+                        
+                        # Always publish the explanation to the dashboard
+                        print(f"!!! SCENE EXPLANATION: {raw}")
+                        publish_incident_event(snap, anomaly_type, raw, s1_score, camera_mac)                
                         last_vlm_time = now
 
             time.sleep(0.01)

@@ -1,0 +1,2 @@
+class AttendanceRecordNotFound(Exception):
+    pass

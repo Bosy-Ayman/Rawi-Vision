@@ -59,14 +59,24 @@ class OnvifOnboarding(OnboardingInterface):
     def get_rtsp_url(self, ip, username, password):
             urls = []
             def check_path(path):
-                url = f"rtsp://{username}:{password}@{ip}:554{path}"
-                cap = cv2.VideoCapture(url)
-                if cap.isOpened():
-                    ret, frame = cap.read()
-                    cap.release()
-                    if ret:
-                        return url
-                return None
+                try:
+                    import os
+                    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
+                    url = f"rtsp://{username}:{password}@{ip}:554{path}"
+                    cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+                    if cap.isOpened():
+                        # Try reading up to 5 times since initial frames might be dropped or corrupted
+                        for _ in range(5):
+                            ret, frame = cap.read()
+                            if ret:
+                                cap.release()
+                                return url
+                        cap.release()
+                    return None
+                except Exception as e:
+                    print(f"Error checking {path}: {e}")
+                    return None
+
             with ThreadPoolExecutor(max_workers=len(self.RTSP_PATHS)) as executor:
                 results = executor.map(check_path, self.RTSP_PATHS)
                 urls = [url for url in results if url]

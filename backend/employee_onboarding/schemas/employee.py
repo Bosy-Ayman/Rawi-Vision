@@ -19,6 +19,7 @@ class EmployeeResponse(EmployeeBase):
     embedding: list[float] | None = None
     embedding_status : str
     images: List[str] | None = None 
+    profile_image_url: str | None = None
 
 class EmployeeUpdate(BaseModel):
     first_name: str | None = None

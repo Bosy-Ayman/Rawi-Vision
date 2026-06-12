@@ -13,6 +13,8 @@ ai/search/venv/
 # Data folders
 data/
 backend/data/
+data/compose
+data/*
 
 # Models
 *.pt
@@ -31,3 +33,6 @@ backend/data/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Docker volumes
+pgvector

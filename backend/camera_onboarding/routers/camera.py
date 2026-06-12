@@ -69,8 +69,24 @@ async def create_camera(
         raise error
 
 @camera_router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_camera(id: UUID, service: CameraService = Depends(get_camera_service)):
+async def delete_camera(
+    id: UUID, 
+    service: CameraService = Depends(get_camera_service),
+    metadata_service: CameraMetadataService = Depends(get_camera_metadata_service)
+):
     try:
+        camera = await service.repository.get_camera_by_id(id=id)
+        if not camera:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="camera not found")
+        
+        mac_address = camera.mac_address
         await service.delete_camera(id=id)
+        
+        try:
+            await metadata_service.delete_camera_metadata_by_mac_address(mac_address=mac_address)
+        except Exception:
+            pass
     except Exception as error:
+        if isinstance(error, HTTPException):
+            raise error
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="camera not found")
