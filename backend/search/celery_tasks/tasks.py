@@ -675,7 +675,8 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
                                                     face_tensor = torch.tensor(np.transpose(face_norm, (2, 0, 1))).unsqueeze(0).to(device)
                                                     with torch.no_grad():
                                                         emb = annotator_resnet(face_tensor).cpu().numpy().squeeze()
-                                                    emp_id, db_name, dist = annotator_face_manager.search_face(emb)
+                                                    # search_face returns (name, emp_id, dist)
+                                                    db_name, emp_id, dist = annotator_face_manager.search_face(emb)
                                                     if dist < 1.0 and db_name != "Unknown":
                                                         name = db_name
                                                         break

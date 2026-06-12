@@ -380,7 +380,8 @@ class FrameEncoder:
                             face_tensor = torch.tensor(np.transpose(face_norm, (2, 0, 1))).unsqueeze(0).to("cpu")
                             with torch.no_grad():
                                 emb = self.resnet(face_tensor).cpu().numpy().squeeze()
-                            emp_id, name, dist = self.face_manager.search_face(emb)
+                            # search_face returns (name, emp_id, dist)
+                            name, emp_id, dist = self.face_manager.search_face(emb)
                             if dist < 1.0 and name != "Unknown":
                                 # Store each individual detection with its emp_id and confidence
                                 face_detections.append({
