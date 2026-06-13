@@ -33,5 +33,11 @@ export const summarizationApi = {
   // Get live progress for a running task
   getProgress: async (summaryId) => {
     return apiClient(`/api/summarization/progress/${summaryId}`, { method: 'GET' });
+  },
+
+  // Get a presigned URL for playing the completed summary video
+  getVideoUrl: async (summaryId) => {
+    return apiClient(`/api/summarization/video-url/${summaryId}`, { method: 'GET' });
   }
 };
+

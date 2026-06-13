@@ -20,6 +20,7 @@ const Summarization = () => {
   const [videos, setVideos]           = useState([]);
   const [summaries, setSummaries]     = useState({});
   const [progress, setProgress]       = useState({}); // { [summary_id]: { percent, stage } }
+  const [videoUrls, setVideoUrls]     = useState({}); // { [summary_id]: presigned_url }
   const [autoSummarize, setAutoSummarize] = useState(false);
   const [loading, setLoading]         = useState(true);
   const [activeVideo, setActiveVideo] = useState(null); // { url, title }
@@ -30,6 +31,16 @@ const Summarization = () => {
     setNotification({ type, title, message });
     setTimeout(() => setNotification(null), 5000);
   };
+
+  /* ---------- presigned URL fetcher ---------- */
+  const fetchVideoUrl = useCallback(async (summaryId) => {
+    try {
+      const data = await summarizationApi.getVideoUrl(summaryId);
+      if (data?.url) {
+        setVideoUrls(prev => ({ ...prev, [summaryId]: data.url }));
+      }
+    } catch (_) { /* swallow */ }
+  }, []);
 
   /* ---------- polling ---------- */
   const startPolling = useCallback((summaryId) => {
@@ -47,10 +58,14 @@ const Summarization = () => {
           const sumsMap = {};
           (sumsList || []).forEach(s => { sumsMap[s.video_id] = s; });
           setSummaries(sumsMap);
+          // Fetch presigned URL for the completed summary
+          if (data.stage === 'completed') {
+            await fetchVideoUrl(summaryId);
+          }
         }
       } catch (_) { /* swallow */ }
     }, 2000);
-  }, []);
+  }, [fetchVideoUrl]);
 
   const stopAllPolling = () => {
     Object.values(pollTimers.current).forEach(clearInterval);
@@ -76,13 +91,17 @@ const Summarization = () => {
       // Auto-start polling for any in-progress tasks
       (sumsList || []).filter(s => s.status === 'processing' || s.status === 'pending')
                       .forEach(s => startPolling(s.id));
+
+      // Fetch presigned URLs for already-completed summaries
+      (sumsList || []).filter(s => s.status === 'completed' && s.summary_storage_path)
+                      .forEach(s => fetchVideoUrl(s.id));
     } catch (error) {
       showToast('error', 'Error', 'Failed to load summarization data');
       console.error(error);
     } finally {
       setLoading(false);
     }
-  }, [startPolling]);
+  }, [startPolling, fetchVideoUrl]);
 
   useEffect(() => {
     fetchData();
@@ -171,8 +190,9 @@ const Summarization = () => {
               const pct     = prog?.percent ?? 0;
               const stage   = prog?.stage   ?? summary?.status ?? 'pending';
               const isProcessing = summary && (summary.status === 'processing' || summary.status === 'pending');
-              const videoUrl = summary?.status === 'completed'
-                ? `http://localhost:9000/camera-summaries/${summary.summary_storage_path}`
+              // Use presigned URL cached in state (fetched from backend)
+              const videoUrl = (summary?.status === 'completed' && summary?.id)
+                ? (videoUrls[summary.id] || null)
                 : null;
 
               return (

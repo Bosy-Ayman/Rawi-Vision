@@ -4,6 +4,10 @@ from sqlalchemy.future import select
 from typing import List
 import uuid
 
+import os
+from datetime import timedelta
+from minio import Minio
+
 from database import get_db
 from ..models.summary import VideoSummary
 from ..schemas.summary import VideoSummaryCreate, VideoSummaryResponse, AutoSummarizeSettings
@@ -11,6 +15,20 @@ from utils.celery_client import celery_app
 from camera_ingestion.utils.redis import redis_client
 
 summarization_router = APIRouter(prefix="/api/summarization", tags=["Summarization"])
+
+def _get_minio():
+    url = (
+        os.getenv("MINIO_SERVER_URL", "127.0.0.1:9000")
+        .replace("http://", "")
+        .replace("https://", "")
+    )
+    return Minio(
+        url,
+        access_key=os.getenv("MINIO_ROOT_USER", "minioadmin"),
+        secret_key=os.getenv("MINIO_ROOT_PASSWORD", "minioadmin"),
+        secure=False,
+    )
+
 
 @summarization_router.post("/generate/{video_id}", response_model=VideoSummaryResponse)
 async def generate_summary(video_id: str, camera_id: str, storage_path: str, db: AsyncSession = Depends(get_db)):
@@ -79,3 +97,24 @@ async def get_summary_progress(summary_id: str):
         }
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+@summarization_router.get("/video-url/{summary_id}")
+async def get_summary_video_url(summary_id: str, db: AsyncSession = Depends(get_db)):
+    """Return a short-lived pre-signed MinIO URL for the summary video."""
+    stmt = select(VideoSummary).filter(VideoSummary.id == summary_id)
+    result = await db.execute(stmt)
+    summary = result.scalars().first()
+    if not summary:
+        raise HTTPException(status_code=404, detail="Summary not found")
+    if summary.status != "completed" or not summary.summary_storage_path:
+        raise HTTPException(status_code=400, detail="Summary not ready")
+    try:
+        minio = _get_minio()
+        url = minio.presigned_get_object(
+            "camera-summaries",
+            summary.summary_storage_path,
+            expires=timedelta(hours=1)
+        )
+        return {"url": url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
