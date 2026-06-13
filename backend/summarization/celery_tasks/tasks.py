@@ -36,6 +36,38 @@ def get_redis_client():
         decode_responses=True
     )
 
+# --- ffmpeg faststart helper ---
+def faststart_mp4(input_path: str) -> str:
+    """
+    Runs ffmpeg -movflags +faststart on input_path so the moov atom is at
+    the beginning of the file. Browsers require this to play videos without
+    downloading the entire file first.
+    Returns the path to the fixed file (replaces input in-place).
+    """
+    import subprocess, shutil
+    ffmpeg_path = shutil.which("ffmpeg") or "ffmpeg"
+    fixed_path = input_path + "_faststart.mp4"
+    try:
+        result = subprocess.run(
+            [ffmpeg_path, "-y", "-i", input_path,
+             "-c", "copy", "-movflags", "+faststart",
+             fixed_path],
+            capture_output=True, text=True, timeout=120
+        )
+        if result.returncode == 0 and os.path.exists(fixed_path):
+            os.replace(fixed_path, input_path)
+            print(f"[faststart] moov atom moved to front: {input_path}")
+        else:
+            print(f"[faststart] ffmpeg failed (rc={result.returncode}), using original file.")
+            print(result.stderr[-500:] if result.stderr else "")
+            if os.path.exists(fixed_path):
+                os.remove(fixed_path)
+    except Exception as e:
+        print(f"[faststart] Error running ffmpeg: {e} — using original file.")
+        if os.path.exists(fixed_path):
+            os.remove(fixed_path)
+    return input_path
+
 # --- DB helper ---
 def get_sync_db_conn():
     host = os.getenv("DB_HOST", "localhost")
@@ -85,9 +117,9 @@ def ensure_bucket(client, bucket_name: str):
     if not client.bucket_exists(bucket_name):
         client.make_bucket(bucket_name)
 
-# Make sure this task runs on the default queue
+# Make sure this task runs on the summarization queue
 celery_app.conf.task_routes.update({
-    "summarization.tasks.generate_video_summary_task": {"queue": "celery"}
+    "summarization.tasks.generate_video_summary_task": {"queue": "summarization"}
 })
 
 _GLOBAL_YOLO_MODEL = None
@@ -187,6 +219,7 @@ def generate_video_summary_task(self, summary_id: str, video_id: str, camera_id:
                 out = cv2.VideoWriter(final_video_path, cv2.VideoWriter_fourcc(*"mp4v"), 1, (640, 480))
                 out.write(cv2.resize(frame, (640, 480)))
                 out.release()
+                faststart_mp4(final_video_path)
             else:
                 from object_detection import detect_and_filter
                 # Run YOLO detection
@@ -211,6 +244,8 @@ def generate_video_summary_task(self, summary_id: str, video_id: str, camera_id:
                     codec="mp4v",
                     crf=23
                 )
+                # Move moov atom to front so browsers can stream without downloading fully
+                faststart_mp4(final_video_path)
                 
             # Upload final video back to MinIO
             dest_object_name = f"{camera_id}/{summary_id}_summary.mp4"
