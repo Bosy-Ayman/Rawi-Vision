@@ -123,7 +123,7 @@ async def get_summary_video_url(summary_id: str, db: AsyncSession = Depends(get_
 @summarization_router.get("/video/{summary_id}/stream")
 async def stream_summary_video(summary_id: str, request: Request, db: AsyncSession = Depends(get_db)):
     """Streams the summary video from MinIO directly through FastAPI supporting Range Requests."""
-    from fastapi.responses import StreamingResponse
+    from fastapi.responses import StreamingResponse, Response
     import re
 
     stmt = select(VideoSummary).filter(VideoSummary.id == summary_id)
@@ -136,16 +136,25 @@ async def stream_summary_video(summary_id: str, request: Request, db: AsyncSessi
 
     try:
         minio = _get_minio()
+        storage_path = summary.summary_storage_path
+
         # 1. Get object metadata (size)
-        stat = minio.stat_object("camera-summaries", summary.summary_storage_path)
+        stat = minio.stat_object("camera-summaries", storage_path)
         file_size = stat.size
+
+        # Detect media type from file extension
+        if storage_path.endswith(".webm"):
+            media_type = "video/webm"
+            ext = ".webm"
+        else:
+            media_type = "video/mp4"
+            ext = ".mp4"
 
         # 2. Parse the Range header
         range_header = request.headers.get("range")
-        
+
         start = 0
         end = file_size - 1
-        status_code = 200
 
         if range_header:
             match = re.match(r"bytes=(\d+)-(\d*)", range_header)
@@ -153,7 +162,6 @@ async def stream_summary_video(summary_id: str, request: Request, db: AsyncSessi
                 start = int(match.group(1))
                 if match.group(2):
                     end = int(match.group(2))
-                status_code = 206
 
         # Bound check
         if start >= file_size:
@@ -166,7 +174,7 @@ async def stream_summary_video(summary_id: str, request: Request, db: AsyncSessi
         # 3. Request only the specific byte range from MinIO
         response = minio.get_object(
             "camera-summaries",
-            summary.summary_storage_path,
+            storage_path,
             offset=start,
             length=content_length
         )
@@ -179,32 +187,27 @@ async def stream_summary_video(summary_id: str, request: Request, db: AsyncSessi
                 response.close()
                 response.release_conn()
 
-        # Detect media type from file extension
-        storage_path = summary.summary_storage_path
-        if storage_path.endswith(".webm"):
-            media_type = "video/webm"
-            ext = ".webm"
-        else:
-            media_type = "video/mp4"
-            ext = ".mp4"
-
+        # Always return 206 Partial Content — this is required for browser video playback
+        # because StreamingResponse cannot set Content-Length with chunked encoding.
+        # 206 with Content-Range tells the browser the exact byte range and total size.
         headers = {
             "Content-Disposition": f"inline; filename={summary_id}_summary{ext}",
             "Accept-Ranges": "bytes",
             "Cache-Control": "no-cache",
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
             "Content-Length": str(content_length),
             "Access-Control-Allow-Origin": "*",
         }
 
-        if status_code == 206:
-            headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
-
         return StreamingResponse(
             iter_file(),
-            status_code=status_code,
+            status_code=206,
             media_type=media_type,
             headers=headers
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
