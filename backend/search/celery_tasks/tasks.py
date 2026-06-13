@@ -521,6 +521,22 @@ def create_indexed_video_record(video_id: str, camera_id: str, storage_path: str
     finally:
         conn.close()
 
+def create_video_summary_record(summary_id: str, video_id: str, camera_id: str, generation_type: str):
+    conn = get_sync_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO video_summaries
+                    (id, video_id, camera_id, status, generation_type)
+                VALUES (%s, %s, %s, 'pending', %s)
+                """,
+                (summary_id, video_id, camera_id, generation_type)
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
 
 @celery_app.task(bind=True, name="search.tasks.record_and_index_task")
 def record_and_index_task(self, camera_id: str, duration: int = 600,
@@ -746,6 +762,19 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
 
             index_video_task.delay(chunk_id, storage_path, sampling_rate)
             print(f"[RECORD] Indexing task dispatched for chunk {chunk_id}")
+
+            try:
+                auto_summarize = redis_client.get("auto_summarize_enabled")
+                if auto_summarize and auto_summarize.lower() == "true":
+                    summary_id = str(uuid.uuid4())
+                    create_video_summary_record(summary_id, chunk_id, camera_id, "auto")
+                    celery_app.send_task(
+                        "summarization.tasks.generate_video_summary_task",
+                        args=[summary_id, chunk_id, camera_id, storage_path]
+                    )
+                    print(f"[RECORD] Auto-Summarization task dispatched for chunk {chunk_id}")
+            except Exception as sum_err:
+                print(f"[WARN] Failed to trigger auto-summarization: {sum_err}")
 
             try:
                 os.unlink(tmp_path)

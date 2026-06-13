@@ -36,6 +36,7 @@ const Sidebar = () => {
     const standardMenuItems = [
         { name: 'Video Feed', icon: 'video-feed.svg', path: '/dashboard/video-feed' },
         { name: 'Smart Search', icon: 'smart-search.svg', path: '/dashboard/smart-search', requiredCapability: 'search' },
+        { name: 'Summarization', icon: 'video-feed.svg', path: '/dashboard/summarization', requiredCapability: 'summarization' },
         { name: 'Security Alerts', icon: 'anomalies.svg', path: '/dashboard/anomalies' },
         { name: 'Room Alerts', icon: 'anomalies.svg', path: '/dashboard/room-alerts' },
         { name: 'Dashboard', icon: 'dashboard.svg', path: '/dashboard/main' },
