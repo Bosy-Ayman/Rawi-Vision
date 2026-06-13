@@ -179,20 +179,30 @@ async def stream_summary_video(summary_id: str, request: Request, db: AsyncSessi
                 response.close()
                 response.release_conn()
 
+        # Detect media type from file extension
+        storage_path = summary.summary_storage_path
+        if storage_path.endswith(".webm"):
+            media_type = "video/webm"
+            ext = ".webm"
+        else:
+            media_type = "video/mp4"
+            ext = ".mp4"
+
         headers = {
-            "Content-Disposition": f"inline; filename={summary_id}_summary.mp4",
+            "Content-Disposition": f"inline; filename={summary_id}_summary{ext}",
             "Accept-Ranges": "bytes",
             "Cache-Control": "no-cache",
+            "Content-Length": str(content_length),
+            "Access-Control-Allow-Origin": "*",
         }
 
         if status_code == 206:
             headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
-            headers["Content-Length"] = str(content_length)
 
         return StreamingResponse(
             iter_file(),
             status_code=status_code,
-            media_type="video/mp4",
+            media_type=media_type,
             headers=headers
         )
     except Exception as e:
