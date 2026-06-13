@@ -324,6 +324,7 @@ async def list_videos(db: db_dependency):
         results.append({
             "video_id": str(v.id),
             "camera_id": str(v.camera_id),
+            "storage_path": v.storage_path,
             "filename": v.filename,
             "status": v.status,
             "sampling_rate": v.sampling_rate,

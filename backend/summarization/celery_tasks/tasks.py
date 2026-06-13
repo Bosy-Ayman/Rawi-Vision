@@ -19,7 +19,12 @@ from object_detection import load_model
 from motion_filter import MotionFilter
 from frame_processor import save_frame
 from video_generator import frames_to_video
-from utils import ensure_dir
+# Import ensure_dir from Summarization_Pipeline/utils.py explicitly to avoid conflict with backend/utils
+import importlib.util
+spec = importlib.util.spec_from_file_location("pipeline_utils", str(summarization_pipeline_dir / "utils.py"))
+pipeline_utils = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(pipeline_utils)
+ensure_dir = pipeline_utils.ensure_dir
 
 # --- Redis helper ---
 def get_redis_client():

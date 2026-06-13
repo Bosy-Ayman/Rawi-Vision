@@ -63,10 +63,10 @@ const Summarization = () => {
   const handleGenerate = async (video) => {
     try {
       showToast('info', 'Generating', 'Triggering summarization...');
-      const newSummary = await summarizationApi.generateSummary(video.id, video.camera_id, video.storage_path);
+      const newSummary = await summarizationApi.generateSummary(video.video_id, video.camera_id, video.storage_path);
       setSummaries(prev => ({
         ...prev,
-        [video.id]: newSummary
+        [video.video_id]: newSummary
       }));
       showToast('success', 'Started', 'Summarization task started!');
       
@@ -117,10 +117,10 @@ const Summarization = () => {
       ) : (
         <div className="video-grid">
           {videos.map(video => {
-            const summary = summaries[video.id];
+            const summary = summaries[video.video_id];
             
             return (
-              <div key={video.id} className="video-card">
+              <div key={video.video_id} className="video-card">
                 <h3>{video.filename}</h3>
                 <p>Camera: {video.camera_id}</p>
                 
