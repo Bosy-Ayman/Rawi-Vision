@@ -42,7 +42,7 @@ INFO:     Uvicorn running on http://127.0.0.1:8002
 
 ---
 
-## Step 3 — Start the Celery Worker
+## Step 3 — Start the Celery Worker (Recording)
 
 > ⚠️ **This is required for recording to work.** Without it, recordings will be queued but never executed.
 
@@ -61,7 +61,26 @@ venv\Scripts\celery.exe -A search.celery_tasks.tasks.celery_app worker --logleve
 
 ---
 
-## Step 4 — Start the Frontend (React)
+## Step 4 — Start the Celery Worker (Summarization)
+
+> ⚠️ **This is required for video summarization to work.** Without it, summarization tasks will be queued but never run.
+
+Open a **new terminal** and run:
+
+```powershell
+cd C:\Users\pouss\Documents\CSAI\Rawi-Vision\backend
+$env:DOCKER_HOST="npipe:////./pipe/dockerDesktopLinuxEngine"
+venv\Scripts\celery.exe -A utils.celery_client.celery_app worker --loglevel=info -P threads --concurrency=2 -Q summarization
+```
+
+✅ Ready when you see:
+```
+[INFO/MainProcess] celery@Bosy ready.
+```
+
+---
+
+## Step 5 — Start the Frontend (React)
 
 Open a **new terminal** and run:
 
@@ -78,7 +97,7 @@ You can now view the app in the browser: http://localhost:3000
 
 ---
 
-## Step 5 — Open the App
+## Step 6 — Open the App
 
 Go to: **http://localhost:3000**
 
@@ -94,13 +113,19 @@ cd C:\Users\pouss\Documents\CSAI\Rawi-Vision\backend
 $env:DOCKER_HOST="npipe:////./pipe/dockerDesktopLinuxEngine"; venv\Scripts\uvicorn.exe main:app --host 127.0.0.1 --port 8002
 ```
 
-**Terminal 2 — Celery Worker:**
+**Terminal 2 — Celery Worker (Recording):**
 ```powershell
 cd C:\Users\pouss\Documents\CSAI\Rawi-Vision\backend
 $env:DOCKER_HOST="npipe:////./pipe/dockerDesktopLinuxEngine"; venv\Scripts\celery.exe -A search.celery_tasks.tasks.celery_app worker --loglevel=info -P threads --concurrency=4 -Q celery
 ```
 
-**Terminal 3 — Frontend:**
+**Terminal 3 — Celery Worker (Summarization):**
+```powershell
+cd C:\Users\pouss\Documents\CSAI\Rawi-Vision\backend
+$env:DOCKER_HOST="npipe:////./pipe/dockerDesktopLinuxEngine"; venv\Scripts\celery.exe -A utils.celery_client.celery_app worker --loglevel=info -P threads --concurrency=2 -Q summarization
+```
+
+**Terminal 4 — Frontend:**
 ```powershell
 cd C:\Users\pouss\Documents\CSAI\Rawi-Vision\frontend
 npm start
@@ -112,7 +137,9 @@ npm start
 
 | Problem | Fix |
 |---|---|
-| Recording starts but shows 0 chunks forever | Celery worker is not running → start Terminal 2 |
+| Recording starts but shows 0 chunks forever | Celery worker (Terminal 2) is not running → start it |
+| Summarization stays "Queued" forever | Celery summarization worker (Terminal 3) is not running → start it |
+| Summarized video doesn't show / won't play | **Restart the backend** (Terminal 1) — FastAPI must reload to apply code changes |
 | Backend crashes on startup | Docker containers not ready → check Step 1 |
 | Frontend shows blank page or API errors | Backend not running → check Step 2 |
 | `docker ps` gives connection error | Docker Desktop is not open or still loading → wait 30s and retry |
