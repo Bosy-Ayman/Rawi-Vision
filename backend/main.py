@@ -122,10 +122,14 @@ async def lifespan(app: FastAPI):
                     secret_key=os.getenv("MINIO_ROOT_PASSWORD", "minioadmin"),
                     secure=False,
                 )
-                bucket_name = "employee-pictures"
-                
-                if minio_client.bucket_exists(bucket_name):
-                    import json
+                import json
+
+                # Buckets that need public-read access for the browser
+                public_read_buckets = ["employee-pictures", "camera-summaries"]
+
+                for bucket_name in public_read_buckets:
+                    if not minio_client.bucket_exists(bucket_name):
+                        minio_client.make_bucket(bucket_name)
                     policy = {
                         "Version": "2012-10-17",
                         "Statement": [
