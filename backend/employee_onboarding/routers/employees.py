@@ -46,11 +46,26 @@ async def create_employee(
     first_name: str = Form(...), 
     last_name: str = Form(...), 
     role: str = Form(...), 
+    assigned_camera_ids: str = Form(None),
+    assigned_days: str = Form(None),
+    assigned_shift_start: str = Form(None),
+    assigned_shift_end: str = Form(None),
     employee_pictures: list[Annotated[UploadFile, File()]] = File(...), 
     service: EmployeeService = Depends(get_employee_service),
 ):
     try: 
-        employee = EmployeeCreate(first_name=first_name, last_name= last_name, role= role)
+        import json
+        camera_ids_list = json.loads(assigned_camera_ids) if assigned_camera_ids else None
+        days_list = json.loads(assigned_days) if assigned_days else None
+        employee = EmployeeCreate(
+            first_name=first_name, 
+            last_name=last_name, 
+            role=role, 
+            assigned_camera_ids=camera_ids_list,
+            assigned_days=days_list,
+            assigned_shift_start=assigned_shift_start,
+            assigned_shift_end=assigned_shift_end
+        )
         created_employee = await service.create_employee(employee=employee, employee_pictures=employee_pictures)
         return created_employee
     except Exception as error:
@@ -77,7 +92,8 @@ async def update_employee_partially(
 ):
     try:
         print("INCOMING TYPE:", type(employee_new_data.embedding))  
-        print("INCOMING VALUE:", employee_new_data.embedding[:3])
+        if employee_new_data.embedding is not None:
+            print("INCOMING VALUE:", employee_new_data.embedding[:3])
         updated_employee = await service.update_employee(id, updated_employee_info=employee_new_data)
         return updated_employee
     except EmployeeNotFound as e:

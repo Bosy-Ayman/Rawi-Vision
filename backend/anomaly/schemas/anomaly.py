@@ -9,6 +9,7 @@ class AnomalyTypeEnum(str, Enum):
     THEFT = "theft"
     VANDALISM = "vandalism"
     UNUSUAL_BEHAVIOR = "unusual_behavior"
+    OUT_OF_BOUNDS = "out_of_bounds"
     UNKNOWN = "unknown"
 
 

@@ -16,6 +16,7 @@ class SearchResult(BaseModel):
     description: str
     clip_url: Optional[str] = None
     track_ids: List[int] = []
+    identities: List[str] = []
 
 class SearchQueryResponse(BaseModel):
     query: str
@@ -60,5 +61,6 @@ class VideoFrameResponse(BaseModel):
     frame_number: int
     timestamp_offset: float
     description: str
+    identities: List[str] = []
 
 

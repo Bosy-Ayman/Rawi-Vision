@@ -12,24 +12,57 @@ const EmployeeModal = ({ employee, allAttendanceData, onClose }) => {
         const targetEmployeeId = employee.employee_id || employee.id;
         const empRecords = allAttendanceData.filter(r => r.employee_id === targetEmployeeId);
         
-        // 1. Total Visits and Total Duration
-        let totalVisits = 0;
-        let totalDurationSeconds = 0;
+        // Group employee records by day and camera to calculate non-overlapping intervals
+        const intervals = {}; // day -> [{start, end, camId}]
         const cameraCounts = {};
-        const dailyDurations = {};
 
         empRecords.forEach(record => {
-            totalVisits += (record.look_count || 1);
-            totalDurationSeconds += (record.duration_seconds || 0);
+            if (!record.day || !record.date_created) return;
+            
+            const start = new Date(record.date_created).getTime();
+            const durationSec = record.duration_seconds || 0;
+            let end = record.last_seen ? new Date(record.last_seen).getTime() : start;
+            if (end <= start && durationSec > 0) {
+                end = start + (durationSec * 1000);
+            }
 
-            // Camera tracking
             const camId = record.camera_id || "Unknown";
             cameraCounts[camId] = (cameraCounts[camId] || 0) + 1;
 
-            // Daily tracking for chart
-            if (record.day) {
-                dailyDurations[record.day] = (dailyDurations[record.day] || 0) + (record.duration_seconds || 0);
+            if (!intervals[record.day]) {
+                intervals[record.day] = [];
             }
+            intervals[record.day].push({ start, end });
+        });
+
+        let totalDurationSeconds = 0;
+        let totalVisits = 0;
+        const dailyDurations = {};
+
+        // Merge daily intervals
+        Object.entries(intervals).forEach(([dayStr, list]) => {
+            const sorted = list.sort((a, b) => a.start - b.start);
+            const merged = [];
+            let current = { start: sorted[0].start, end: sorted[0].end };
+
+            for (let i = 1; i < sorted.length; i++) {
+                const item = sorted[i];
+                if (item.start <= current.end) {
+                    current.end = Math.max(current.end, item.end);
+                } else {
+                    merged.push(current);
+                    current = { start: item.start, end: item.end };
+                }
+            }
+            merged.push(current);
+
+            const dayDurationMs = merged.reduce((sum, interval) => sum + (interval.end - interval.start), 0);
+            const dayDurationSec = dayDurationMs / 1000;
+
+            dailyDurations[dayStr] = dayDurationSec;
+            totalDurationSeconds += dayDurationSec;
+            // The actual number of distinct non-overlapping attendance sessions on this day
+            totalVisits += merged.length;
         });
 
         // 2. Favorite Camera
@@ -42,9 +75,59 @@ const EmployeeModal = ({ employee, allAttendanceData, onClose }) => {
             }
         });
 
-        // 3. Average Session Duration
+        // 3. Average Session Duration based on actual sessions
         const avgSessionSeconds = totalVisits > 0 ? totalDurationSeconds / totalVisits : 0;
         
+        // --- Calculate Smart Absence & Shift Adherence Performance ---
+        let awayAlertsCount = 0;
+        let totalMinutesAway = 0;
+        let shiftAdherence = "100%";
+
+        if (allAttendanceData) {
+            // Find all out of bounds alerts for this specific employee
+            const empIdStr = String(targetEmployeeId);
+            const matchingAlerts = allAttendanceData.alerts 
+                ? allAttendanceData.alerts.filter(a => String(a.employee_id) === empIdStr && a.anomaly_type === 'out_of_bounds')
+                : [];
+            
+            awayAlertsCount = matchingAlerts.length;
+            
+            // Extract minutes from descriptions (e.g., "left room for 24.5 minutes")
+            matchingAlerts.forEach(alert => {
+                const match = alert.description.match(/for ([\d\.]+) minutes/);
+                if (match) {
+                    totalMinutesAway += parseFloat(match[1]);
+                }
+            });
+
+            // Calculate shift adherence
+            // A perfect shift is counted as the duration they are assigned (default 8 hours = 28800s if shift time not set)
+            let targetShiftSec = 28800; 
+            if (employee.assigned_shift_start && employee.assigned_shift_end) {
+                const [sH, sM] = employee.assigned_shift_start.split(':').map(Number);
+                const [eH, eM] = employee.assigned_shift_end.split(':').map(Number);
+                const startMs = (sH * 60 + sM) * 60 * 1000;
+                const endMs = (eH * 60 + eM) * 60 * 1000;
+                if (endMs > startMs) {
+                    targetShiftSec = (endMs - startMs) / 1000;
+                }
+            }
+
+            // Days they actually came in:
+            const daysCheckedIn = Object.keys(intervals).length;
+
+            if (totalDurationSeconds > 0 && daysCheckedIn > 0) {
+                // Adherence = (Time Present / Expected Shift Time for only checked in days) minus away time penalty
+                const expectedPresence = targetShiftSec * daysCheckedIn;
+                const activePresence = Math.max(0, totalDurationSeconds - (totalMinutesAway * 60));
+                const rate = Math.min(100, Math.round((activePresence / expectedPresence) * 100));
+                shiftAdherence = `${rate}%`;
+            } else {
+                // If they never checked in on any days (vacation / off), adherence is not penalised or remains N/A instead of 0%
+                shiftAdherence = daysCheckedIn > 0 ? "0%" : "N/A (No Shifts)";
+            }
+        }
+
         // Format functions
         const formatDuration = (secs) => {
             if (secs < 60) return `${Math.floor(secs)}s`;
@@ -73,7 +156,10 @@ const EmployeeModal = ({ employee, allAttendanceData, onClose }) => {
                 totalVisits,
                 totalDuration: formatDuration(totalDurationSeconds),
                 favoriteCamera,
-                avgSession: formatDuration(avgSessionSeconds)
+                avgSession: formatDuration(avgSessionSeconds),
+                awayAlertsCount,
+                totalMinutesAway: `${Math.round(totalMinutesAway)}m`,
+                shiftAdherence
             },
             chartData,
             recentActivity
@@ -128,6 +214,26 @@ const EmployeeModal = ({ employee, allAttendanceData, onClose }) => {
                                 <div className="modal-stat-card">
                                     <span className="modal-stat-label">Avg Session</span>
                                     <span className="modal-stat-value">{stats.avgSession}</span>
+                                </div>
+                            </div>
+
+                            <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                <h3 style={{ margin: '0 0 4px 0', fontSize: '15px', color: '#f8fafc', fontWeight: '600' }}>
+                                    Assigned Room Performance
+                                </h3>
+                                <div className="modal-stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+                                    <div className="modal-stat-card" style={{ border: '1px solid rgba(16, 185, 129, 0.2)', background: 'rgba(16, 185, 129, 0.02)' }}>
+                                        <span className="modal-stat-label" style={{ color: '#10b981' }}>Shift Adherence</span>
+                                        <span className="modal-stat-value" style={{ color: '#10b981' }}>{stats.shiftAdherence}</span>
+                                    </div>
+                                    <div className="modal-stat-card" style={{ border: '1px solid rgba(239, 68, 68, 0.2)', background: 'rgba(239, 68, 68, 0.02)' }}>
+                                        <span className="modal-stat-label" style={{ color: '#ef4444' }}>Away Alerts</span>
+                                        <span className="modal-stat-value" style={{ color: '#ef4444' }}>{stats.awayAlertsCount}</span>
+                                    </div>
+                                    <div className="modal-stat-card" style={{ border: '1px solid rgba(245, 158, 11, 0.2)', background: 'rgba(245, 158, 11, 0.02)' }}>
+                                        <span className="modal-stat-label" style={{ color: '#f59e0b' }}>Total Time Away</span>
+                                        <span className="modal-stat-value" style={{ color: '#f59e0b' }}>{stats.totalMinutesAway}</span>
+                                    </div>
                                 </div>
                             </div>
 

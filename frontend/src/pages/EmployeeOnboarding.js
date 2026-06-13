@@ -1,19 +1,97 @@
 import React, { useState } from 'react';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
 import { employeeAPI } from '../api/employees';
-import './EmployeeOnboarding.css'; // We'll create this specific CSS file
+import { cameraAPI } from '../api/camera';
+import './EmployeeOnboarding.css';
+
+const WEEKDAYS = [
+    { label: 'M', value: 0, fullName: 'Monday' },
+    { label: 'T', value: 1, fullName: 'Tuesday' },
+    { label: 'W', value: 2, fullName: 'Wednesday' },
+    { label: 'T', value: 3, fullName: 'Thursday' },
+    { label: 'F', value: 4, fullName: 'Friday' },
+    { label: 'S', value: 5, fullName: 'Saturday' },
+    { label: 'S', value: 6, fullName: 'Sunday' }
+];
+
+const CameraMultiSelect = ({ cameras, selectedCameraIds = [], onChange }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const containerRef = React.useRef(null);
+
+    React.useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (containerRef.current && !containerRef.current.contains(event.target)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    return (
+        <div className="custom-multiselect-container" ref={containerRef}>
+            <div className="multiselect-trigger" onClick={() => setIsOpen(!isOpen)}>
+                <span>
+                    {selectedCameraIds.length === 0 
+                        ? 'No Cameras Assigned' 
+                        : `${selectedCameraIds.length} Camera(s) Selected`}
+                </span>
+                <span className="arrow" style={{ fontSize: '0.8rem', opacity: 0.7 }}>▼</span>
+            </div>
+            {isOpen && (
+                <div className="multiselect-dropdown">
+                    {cameras.length === 0 ? (
+                        <div style={{ padding: '8px', color: '#6b7280', fontSize: '0.9rem' }}>No cameras available</div>
+                    ) : (
+                        cameras.map(cam => {
+                            const isChecked = selectedCameraIds.includes(cam.id);
+                            return (
+                                <label key={cam.id} className="multiselect-item">
+                                    <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={() => {
+                                            const newIds = isChecked
+                                                ? selectedCameraIds.filter(id => id !== cam.id)
+                                                : [...selectedCameraIds, cam.id];
+                                            onChange(newIds);
+                                        }}
+                                        style={{ marginRight: '8px', cursor: 'pointer' }}
+                                    />
+                                    <span className="item-text">{cam.room} ({cam.building || 'No Location'})</span>
+                                </label>
+                            );
+                        })
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
 
 const EmployeeOnboarding = () => {
     const [employees, setEmployees] = useState([
-        { firstName: '', lastName: '', role: '', photo: null, photoPreview: null }
+        { firstName: '', lastName: '', role: '', assignedCameraIds: [], assignedDays: [0, 1, 2, 3, 4], assignedShiftStart: '', assignedShiftEnd: '', photo: null, photoPreview: null }
     ]);
+    const [cameras, setCameras] = useState([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitStatus, setSubmitStatus] = useState(null); // 'success', 'error', or null
-
     const [successCount, setSuccessCount] = useState(0);
 
+    React.useEffect(() => {
+        const fetchCameras = async () => {
+            try {
+                const list = await cameraAPI.getAllCameras();
+                setCameras(list || []);
+            } catch (err) {
+                console.error("Failed to load cameras list for onboarding", err);
+            }
+        };
+        fetchCameras();
+    }, []);
+
     const handleAddRow = () => {
-        setEmployees([...employees, { firstName: '', lastName: '', role: '', photo: null, photoPreview: null }]);
+        setEmployees([...employees, { firstName: '', lastName: '', role: '', assignedCameraIds: [], assignedDays: [0, 1, 2, 3, 4], assignedShiftStart: '', assignedShiftEnd: '', photo: null, photoPreview: null }]);
     };
 
     const handleRemoveRow = (index) => {
@@ -58,12 +136,20 @@ const EmployeeOnboarding = () => {
                 formData.append('first_name', emp.firstName);
                 formData.append('last_name', emp.lastName);
                 formData.append('role', emp.role);
+                formData.append('assigned_camera_ids', JSON.stringify(emp.assignedCameraIds || []));
+                formData.append('assigned_days', JSON.stringify(emp.assignedDays || []));
+                
+                if (emp.assignedShiftStart) {
+                    formData.append('assigned_shift_start', emp.assignedShiftStart);
+                }
+                if (emp.assignedShiftEnd) {
+                    formData.append('assigned_shift_end', emp.assignedShiftEnd);
+                }
                 formData.append('employee_pictures', emp.photo);
 
                 try {
-                    const data = await employeeAPI.createEmployee(formData);
+                    await employeeAPI.createEmployee(formData);
                     currentSuccessCount++;
-                    // Optionally, you could store individual success messages here if needed
                 } catch (error) {
                     console.error(`Error uploading employee at row ${i + 1}: `, error);
                     const errorMessage = error.response && error.response.data && error.response.data.detail
@@ -76,7 +162,7 @@ const EmployeeOnboarding = () => {
             if (errors.length === 0 && currentSuccessCount > 0) {
                 setSuccessCount(currentSuccessCount);
                 setSubmitStatus('success');
-                setEmployees([{ firstName: '', lastName: '', role: '', photo: null, photoPreview: null }]); // Reset form
+                setEmployees([{ firstName: '', lastName: '', role: '', assignedCameraIds: [], assignedDays: [0, 1, 2, 3, 4], assignedShiftStart: '', assignedShiftEnd: '', photo: null, photoPreview: null }]); // Reset form
                 setTimeout(() => setSubmitStatus(null), 3000);
             } else if (errors.length > 0) {
                 setSubmitStatus('error');
@@ -125,7 +211,7 @@ const EmployeeOnboarding = () => {
 
                             <div className="row-content">
                                 <div className="photo-upload-section">
-                                    <div className="photo-preview" onClick={() => document.getElementById(`photo - upload - ${index} `).click()}>
+                                    <div className="photo-preview" onClick={() => document.getElementById(`photo-upload-${index}`).click()}>
                                         {emp.photoPreview ? (
                                             <img src={emp.photoPreview} alt="Preview" />
                                         ) : (
@@ -136,7 +222,7 @@ const EmployeeOnboarding = () => {
                                     </div>
                                     <input
                                         type="file"
-                                        id={`photo - upload - ${index} `}
+                                        id={`photo-upload-${index}`}
                                         className="hidden-input"
                                         accept="image/*"
                                         onChange={(e) => handlePhotoChange(index, e)}
@@ -169,7 +255,6 @@ const EmployeeOnboarding = () => {
                                             onChange={(e) => handleChange(index, 'role', e.target.value)}
                                         >
                                             <option value="">Select Role...</option>
-                                            <option value="Select Role">Select Role</option> {/* Placeholder as seen in your request about dropdowns? User asked for predefined roles eventually. */}
                                             <option value="Software Engineer">Software Engineer</option>
                                             <option value="HR">HR</option>
                                             <option value="Manager">Manager</option>
@@ -177,6 +262,57 @@ const EmployeeOnboarding = () => {
                                             <option value="Staff">Staff</option>
                                             <option value="Intern">Intern</option>
                                         </select>
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Assigned Cameras / Rooms</label>
+                                        <CameraMultiSelect
+                                            cameras={cameras}
+                                            selectedCameraIds={emp.assignedCameraIds}
+                                            onChange={(newIds) => handleChange(index, 'assignedCameraIds', newIds)}
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Routine Days (Weekly)</label>
+                                        <div className="days-selector">
+                                            {WEEKDAYS.map(day => {
+                                                const isSelected = (emp.assignedDays || []).includes(day.value);
+                                                return (
+                                                    <button
+                                                        key={day.value}
+                                                        type="button"
+                                                        className={`day-pill ${isSelected ? 'active' : ''}`}
+                                                        onClick={() => {
+                                                            const currentDays = emp.assignedDays || [];
+                                                            const newDays = isSelected
+                                                                ? currentDays.filter(d => d !== day.value)
+                                                                : [...currentDays, day.value];
+                                                            handleChange(index, 'assignedDays', newDays);
+                                                        }}
+                                                        title={day.fullName}
+                                                    >
+                                                        {day.label}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                        <div className="form-group">
+                                            <label>Shift Start Time</label>
+                                            <input
+                                                type="time"
+                                                value={emp.assignedShiftStart}
+                                                onChange={(e) => handleChange(index, 'assignedShiftStart', e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="form-group">
+                                            <label>Shift End Time</label>
+                                            <input
+                                                type="time"
+                                                value={emp.assignedShiftEnd}
+                                                onChange={(e) => handleChange(index, 'assignedShiftEnd', e.target.value)}
+                                            />
+                                        </div>
                                     </div>
                                 </div>
                             </div>

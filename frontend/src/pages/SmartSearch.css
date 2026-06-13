@@ -73,6 +73,7 @@
     display: flex;
     flex-direction: column;
     transition: box-shadow 0.2s, transform 0.2s;
+    cursor: pointer;
 }
 
 .result-card:hover {
@@ -607,6 +608,155 @@
     display: inline-block;
     vertical-align: middle;
 }
+/* ── Modal Styles ── */
+.search-modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    animation: fadeIn 0.2s ease-out;
+}
 
+.search-modal-content {
+    background-color: #ffffff;
+    border-radius: 16px;
+    width: 90%;
+    max-width: 800px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
 
+.search-modal-header {
+    padding: 16px 24px;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
 
+.search-modal-header h3 {
+    margin: 0;
+    color: #0f172a;
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+
+.search-modal-close-btn {
+    background: none;
+    border: none;
+    font-size: 1.75rem;
+    color: #64748b;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 4px;
+    transition: color 0.15s;
+}
+
+.search-modal-close-btn:hover {
+    color: #0f172a;
+}
+
+.search-modal-body {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.search-modal-video-container {
+    width: 100%;
+    background-color: #000000;
+    border-radius: 12px;
+    overflow: hidden;
+    aspect-ratio: 16 / 9;
+}
+
+.search-modal-video {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.search-modal-details {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.search-modal-badges {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.search-modal-description {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 16px;
+}
+
+.search-modal-description h4 {
+    margin: 0 0 8px 0;
+    color: #334155;
+    font-size: 0.9rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.search-modal-description p {
+    margin: 0;
+    color: #475569;
+    font-size: 0.95rem;
+    line-height: 1.6;
+}
+
+.search-modal-footer {
+    padding: 16px 24px;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.search-modal-action-btn {
+    background-color: #2563eb;
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.15s;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.search-modal-action-btn:hover {
+    background-color: #1d4ed8;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}

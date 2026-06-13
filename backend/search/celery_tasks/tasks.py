@@ -18,6 +18,30 @@ Task 3: record_and_index_task
 """
 
 import os
+import sys
+
+# Limit CPU threads to prevent CPU spikes and supervisor container kills
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["TQDM_DISABLE"] = "1"
+os.environ["DISABLE_TQDM"] = "1"
+
+try:
+    import torch
+    torch.set_num_threads(1)
+    torch.set_num_interop_threads(1)
+except Exception:
+    pass
+
+try:
+    import cv2
+    cv2.setNumThreads(1)
+except Exception:
+    pass
+
 from pathlib import Path
 from dotenv import load_dotenv
 env_path = Path(__file__).resolve().parent.parent.parent / ".env"

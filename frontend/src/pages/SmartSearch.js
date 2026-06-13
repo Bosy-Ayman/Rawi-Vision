@@ -3,18 +3,22 @@ import DashboardLayout from '../components/dashboard/DashboardLayout';
 import { searchAPI } from '../api/search';
 import './SmartSearch.css';
 
-const BACKEND_BASE = 'http://127.0.0.1:8001';
+const BACKEND_BASE = 'http://127.0.0.1:8002';
 
 // --------------------------------------------------------------------
 // ClipPlayer: polls /api/search/clip-status until the clip is ready
 // --------------------------------------------------------------------
-const ClipPlayer = ({ clipPath }) => {
+const ClipPlayer = ({ clipPath, videoClassName = "result-video", showControls = false }) => {
     const [clipSrc, setClipSrc] = useState(null);
     const [status, setStatus] = useState('loading'); // loading | ready | error
     const intervalRef = useRef(null);
 
     useEffect(() => {
         if (!clipPath) { setStatus('error'); return; }
+
+        // Reset state variables when a new clip path is loaded
+        setClipSrc(null);
+        setStatus('loading');
 
         // clipPath is like /api/search/clip/{video_id}/{frame}?timestamp=X
         // Build the corresponding status URL
@@ -48,11 +52,12 @@ const ClipPlayer = ({ clipPath }) => {
         return (
             <video
                 src={clipSrc}
-                controls
-                className="result-video"
+                controls={showControls}
+                className={videoClassName}
                 autoPlay
-                muted
+                muted={!showControls}
                 loop
+                playsInline
                 onError={() => setStatus('error')}
             />
         );
@@ -76,7 +81,8 @@ const ClipPlayer = ({ clipPath }) => {
 const DescriptionBlock = ({ text }) => {
     if (!text) return null;
 
-    const parts = text.split('|').map(s => s.trim());
+    const cleanedText = text.replace(/\[Real-time Identity:[^\]]+\]/g, '').replace(/\s+/g, ' ').trim();
+    const parts = cleanedText.split('|').map(s => s.trim());
     const mainDesc = parts[0] || '';
 
     const getSection = (label) => {
@@ -145,6 +151,8 @@ const SmartSearch = () => {
     const [endDate, setEndDate] = useState('');
     const [startTime, setStartTime] = useState('');
     const [endTime, setEndTime] = useState('');
+    const [selectedPersonFilter, setSelectedPersonFilter] = useState('All');
+    const [activeModalMatch, setActiveModalMatch] = useState(null);
     const dropdownRef = useRef(null);
 
     const availableCameras = Array.from(
@@ -232,6 +240,7 @@ const SmartSearch = () => {
         setLoading(true);
         setError(null);
         setResults(null);
+        setSelectedPersonFilter('All');
 
         try {
             // Run parallel searches for all active videos
@@ -313,6 +322,23 @@ const SmartSearch = () => {
             setLoading(false);
         }
     };
+
+    const searchResultPeople = useMemo(() => {
+        if (!results || !results.results) return [];
+        const people = new Set();
+        results.results.forEach(r => {
+            if (r.identities) {
+                r.identities.forEach(name => people.add(name));
+            }
+        });
+        return Array.from(people);
+    }, [results]);
+
+    const displayedResults = useMemo(() => {
+        if (!results || !results.results) return [];
+        if (selectedPersonFilter === 'All') return results.results;
+        return results.results.filter(r => r.identities && r.identities.includes(selectedPersonFilter));
+    }, [results, selectedPersonFilter]);
 
     return (
         <DashboardLayout title="Smart Search">
@@ -512,13 +538,61 @@ const SmartSearch = () => {
                             </div>
                         )}
 
-                        <h3 style={{marginTop: '30px', color: '#1e293b'}}>Matches ({results.total_results})</h3>
+                        {searchResultPeople.length > 0 && (
+                            <div className="search-people-filters" style={{ margin: '20px 0 10px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                <span style={{ fontSize: '0.85rem', color: '#475569', fontWeight: '600' }}>Filter by identified person:</span>
+                                <button
+                                    onClick={() => setSelectedPersonFilter('All')}
+                                    className={`filter-chip ${selectedPersonFilter === 'All' ? 'active' : ''}`}
+                                    style={{
+                                        backgroundColor: selectedPersonFilter === 'All' ? '#1e293b' : '#f1f5f9',
+                                        color: selectedPersonFilter === 'All' ? '#fff' : '#475569',
+                                        border: 'none',
+                                        borderRadius: '16px',
+                                        padding: '5px 12px',
+                                        fontSize: '0.8rem',
+                                        fontWeight: '500',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s',
+                                        outline: 'none'
+                                    }}
+                                >
+                                    👥 All ({results.total_results})
+                                </button>
+                                {searchResultPeople.map(name => {
+                                    const count = results.results.filter(r => r.identities && r.identities.includes(name)).length;
+                                    return (
+                                        <button
+                                            key={name}
+                                            onClick={() => setSelectedPersonFilter(name)}
+                                            className={`filter-chip ${selectedPersonFilter === name ? 'active' : ''}`}
+                                            style={{
+                                                backgroundColor: selectedPersonFilter === name ? '#3b82f6' : '#f1f5f9',
+                                                color: selectedPersonFilter === name ? '#fff' : '#475569',
+                                                border: 'none',
+                                                borderRadius: '16px',
+                                                padding: '5px 12px',
+                                                fontSize: '0.8rem',
+                                                fontWeight: '500',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s',
+                                                outline: 'none'
+                                            }}
+                                        >
+                                            👤 {name} ({count})
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        <h3 style={{marginTop: '30px', color: '#1e293b'}}>Matches ({displayedResults.length})</h3>
                         <div className="results-grid">
-                            {results.results.map((match, idx) => (
-                                <div key={idx} className="result-card">
+                            {displayedResults.map((match, idx) => (
+                                <div key={`${match.clip_url}_${idx}`} className="result-card" onClick={() => setActiveModalMatch(match)}>
                                     <ClipPlayer clipPath={match.clip_url} />
                                     <div className="result-info">
-                                        <div className="result-badges-row">
+                                        <div className="result-badges-row" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
                                             <span className="similarity-badge">{match.similarity.toFixed(1)}% Match</span>
                                             <span className="timestamp-badge">⏱ {match.timestamp.toFixed(1)}s</span>
                                             {match.videoName && (
@@ -526,6 +600,22 @@ const SmartSearch = () => {
                                                     🎥 {match.videoName}
                                                 </span>
                                             )}
+                                            {match.identities && match.identities.map((name, nIdx) => (
+                                                <span key={nIdx} className="person-badge" style={{
+                                                    backgroundColor: '#eff6ff',
+                                                    color: '#1e40af',
+                                                    border: '1px solid #bfdbfe',
+                                                    borderRadius: '4px',
+                                                    padding: '1px 6px',
+                                                    fontSize: '0.75rem',
+                                                    fontWeight: '600',
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: '4px'
+                                                }}>
+                                                    👤 {name}
+                                                </span>
+                                            ))}
                                         </div>
                                         <DescriptionBlock text={match.description} />
                                     </div>
@@ -535,6 +625,67 @@ const SmartSearch = () => {
                     </div>
                 )}
             </div>
+            {activeModalMatch && (
+                <div className="search-modal-backdrop" onClick={() => setActiveModalMatch(null)}>
+                    <div className="search-modal-content" onClick={(e) => e.stopPropagation()}>
+                        <div className="search-modal-header">
+                            <h3>🎥 {activeModalMatch.videoName || 'Video Clip'}</h3>
+                            <button className="search-modal-close-btn" onClick={() => setActiveModalMatch(null)}>&times;</button>
+                        </div>
+                        <div className="search-modal-body">
+                            <div className="search-modal-video-container">
+                                <ClipPlayer
+                                    clipPath={activeModalMatch.clip_url}
+                                    videoClassName="search-modal-video"
+                                    showControls={true}
+                                />
+                            </div>
+                            <div className="search-modal-details">
+                                <div className="search-modal-badges">
+                                    <span className="similarity-badge" style={{ fontSize: '0.85rem', padding: '4px 10px' }}>
+                                        {activeModalMatch.similarity.toFixed(1)}% Match
+                                    </span>
+                                    <span className="timestamp-badge" style={{ fontSize: '0.85rem', padding: '4px 10px' }}>
+                                        ⏱ {activeModalMatch.timestamp.toFixed(1)}s
+                                    </span>
+                                    {activeModalMatch.identities && activeModalMatch.identities.map((name, nIdx) => (
+                                        <span key={nIdx} className="person-badge" style={{
+                                            backgroundColor: '#eff6ff',
+                                            color: '#1e40af',
+                                            border: '1px solid #bfdbfe',
+                                            borderRadius: '4px',
+                                            padding: '4px 10px',
+                                            fontSize: '0.85rem',
+                                            fontWeight: '600',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '4px'
+                                        }}>
+                                            👤 {name}
+                                        </span>
+                                    ))}
+                                </div>
+                                <div className="search-modal-description">
+                                    <h4>Visual Description</h4>
+                                    <p>{activeModalMatch.description.replace(/\[Real-time Identity:[^\]]+\]/g, '').split(' | ')[0]}</p>
+                                </div>
+                            </div>
+                        </div>
+                        {activeModalMatch.clip_url && (
+                            <div className="search-modal-footer">
+                                <a
+                                    href={`${BACKEND_BASE}/api/search/video/${activeModalMatch.clip_url.split('/')[4]}/stream`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="search-modal-action-btn"
+                                >
+                                    🔗 Stream Full Video
+                                </a>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </DashboardLayout>
     );
 };

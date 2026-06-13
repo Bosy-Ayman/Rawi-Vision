@@ -58,57 +58,106 @@ const DashboardMain = () => {
 
         // 1. Group records by employee AND day to compute "Visits" and "Duration"
         const grouped = {};
-        const cameraDurations = {}; // camera_id -> total duration
-        const dailyUniquePeople = {}; // day -> Set of employee_ids
-        const dailyTotalDuration = {}; // day -> total duration in seconds
-        
         const cameraRoleUniquePeople = {}; // camId -> { role: Set(employee_id) }
         const uniqueRoles = new Set();
 
+        // We will collect all intervals (start, end) for each (employee_id, day) and each camera
+        const intervals = {}; // key: employee_id_day -> [{start, end, camId}]
+        
         attendanceData.forEach(record => {
             if (!record.day || !record.date_created) return;
             
-            // Unique People Tracking
-            const dayStr = record.day;
-            if (!dailyUniquePeople[dayStr]) dailyUniquePeople[dayStr] = new Set();
-            dailyUniquePeople[dayStr].add(record.employee_id);
-
-            // Daily Duration Tracking
-            dailyTotalDuration[dayStr] = (dailyTotalDuration[dayStr] || 0) + (record.duration_seconds || 0);
-
-            // Camera Duration Tracking
+            const key = `${record.employee_id}_${record.day}`;
+            const start = new Date(record.date_created).getTime();
+            // Fall back to date_created + duration_seconds if last_seen is missing/null/equal to date_created
+            const durationSec = record.duration_seconds || 0;
+            let end = record.last_seen ? new Date(record.last_seen).getTime() : start;
+            if (end <= start && durationSec > 0) {
+                end = start + (durationSec * 1000);
+            }
+            
             const camId = record.camera_id || "Unknown";
-            cameraDurations[camId] = (cameraDurations[camId] || 0) + (record.duration_seconds || 0);
 
-            // Camera Role Tracking (Enterprise Stacked Bar - UNIQUE People)
+            if (!intervals[key]) {
+                intervals[key] = [];
+            }
+            intervals[key].push({ start, end, camId, record });
+
+            // Camera Role Tracking
             const roleKey = record.role || "Employee";
             if (!cameraRoleUniquePeople[camId]) cameraRoleUniquePeople[camId] = {};
             if (!cameraRoleUniquePeople[camId][roleKey]) cameraRoleUniquePeople[camId][roleKey] = new Set();
             cameraRoleUniquePeople[camId][roleKey].add(record.employee_id);
             uniqueRoles.add(roleKey);
+        });
 
-            const key = `${record.employee_id}_${record.day}`;
-            if (!grouped[key]) {
-                grouped[key] = {
-                    ...record,
-                    look_count: record.look_count || 1, // now represents visits/sessions
-                    first_seen: record.date_created,
-                    last_seen: record.last_seen || record.date_created,
-                    total_duration_seconds: record.duration_seconds || 0
-                };
-            } else {
-                grouped[key].look_count += (record.look_count || 1);
-                grouped[key].total_duration_seconds += (record.duration_seconds || 0);
-                
-                const recordFirst = new Date(record.date_created);
-                if (recordFirst < new Date(grouped[key].first_seen)) {
-                    grouped[key].first_seen = record.date_created;
-                }
-                const recordLast = new Date(record.last_seen || record.date_created);
-                if (recordLast > new Date(grouped[key].last_seen)) {
-                    grouped[key].last_seen = record.last_seen || record.date_created;
+        const dailyUniquePeople = {}; // day -> Set of employee_ids
+        const dailyTotalDuration = {}; // day -> total duration in seconds
+        const cameraDurations = {}; // camera_id -> total duration
+
+        // Merge intervals for each employee + day to compute actual duration
+        Object.entries(intervals).forEach(([key, list]) => {
+            if (list.length === 0) return;
+            const sorted = list.sort((a, b) => a.start - b.start);
+            
+            // Merge intervals for total daily duration
+            const mergedTotal = [];
+            let currentTotal = { start: sorted[0].start, end: sorted[0].end };
+            
+            for (let i = 1; i < sorted.length; i++) {
+                const item = sorted[i];
+                if (item.start <= currentTotal.end) {
+                    currentTotal.end = Math.max(currentTotal.end, item.end);
+                } else {
+                    mergedTotal.push(currentTotal);
+                    currentTotal = { start: item.start, end: item.end };
                 }
             }
+            mergedTotal.push(currentTotal);
+            
+            const totalDurationMs = mergedTotal.reduce((sum, interval) => sum + (interval.end - interval.start), 0);
+            const totalDurationSec = totalDurationMs / 1000;
+            
+            // Build the grouped record for main table
+            const baseRecord = sorted[0].record;
+            const dayStr = baseRecord.day;
+            
+            grouped[key] = {
+                ...baseRecord,
+                look_count: sorted.length, // total visits/sessions
+                first_seen: new Date(Math.min(...sorted.map(s => s.start))).toISOString(),
+                last_seen: new Date(Math.max(...sorted.map(s => s.end))).toISOString(),
+                total_duration_seconds: totalDurationSec
+            };
+
+            // Aggregate day-wise unique people & duration
+            if (!dailyUniquePeople[dayStr]) dailyUniquePeople[dayStr] = new Set();
+            dailyUniquePeople[dayStr].add(baseRecord.employee_id);
+            dailyTotalDuration[dayStr] = (dailyTotalDuration[dayStr] || 0) + totalDurationSec;
+
+            // Merge intervals camera-wise for camera specific durations
+            const cameraIntervals = {};
+            sorted.forEach(item => {
+                if (!cameraIntervals[item.camId]) cameraIntervals[item.camId] = [];
+                cameraIntervals[item.camId].push(item);
+            });
+
+            Object.entries(cameraIntervals).forEach(([camId, camList]) => {
+                const mergedCam = [];
+                let currentCam = { start: camList[0].start, end: camList[0].end };
+                for (let i = 1; i < camList.length; i++) {
+                    const item = camList[i];
+                    if (item.start <= currentCam.end) {
+                        currentCam.end = Math.max(currentCam.end, item.end);
+                    } else {
+                        mergedCam.push(currentCam);
+                        currentCam = { start: item.start, end: item.end };
+                    }
+                }
+                mergedCam.push(currentCam);
+                const camDurationMs = mergedCam.reduce((sum, interval) => sum + (interval.end - interval.start), 0);
+                cameraDurations[camId] = (cameraDurations[camId] || 0) + (camDurationMs / 1000);
+            });
         });
 
         // 2. Sort aggregated data by last_seen
@@ -128,16 +177,15 @@ const DashboardMain = () => {
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-        // Process RAW attendanceData for accurate graphs
-        attendanceData.forEach(record => {
-            if (!record.day || !record.date_created) return;
+        // Process merged daily intervals for accurate top attender / graph logic
+        Object.entries(grouped).forEach(([key, record]) => {
             const recordDate = new Date(record.day);
+            const empName = `${record.first_name} ${record.last_name}`;
             
-            // Top Attender Logic (only last 7 days)
+            // Check if record falls in the last 7 days
             if (recordDate >= sevenDaysAgo) {
-                const empName = `${record.first_name} ${record.last_name}`;
-                employeeCheckinCount[empName] = (employeeCheckinCount[empName] || 0) + 1;
-                employeeTotalDuration[empName] = (employeeTotalDuration[empName] || 0) + (record.duration_seconds || 0);
+                employeeCheckinCount[empName] = (employeeCheckinCount[empName] || 0) + record.look_count;
+                employeeTotalDuration[empName] = (employeeTotalDuration[empName] || 0) + record.total_duration_seconds;
                 if (!employeeObjects[empName]) employeeObjects[empName] = record;
             }
 
@@ -146,13 +194,13 @@ const DashboardMain = () => {
             dayMap[dayKey] = dailyUniquePeople[record.day]?.size || 0;
 
             // Group by Hour (for Line Chart)
-            const h = new Date(record.date_created).getHours();
+            const h = new Date(record.first_seen).getHours();
             const hourKey = `${h}:00`;
-            hourMap[hourKey] = (hourMap[hourKey] || 0) + 1;
+            hourMap[hourKey] = (hourMap[hourKey] || 0) + record.look_count;
 
             // Group by Role
             const rKey = record.role || "Employee";
-            roleMap[rKey] = (roleMap[rKey] || 0) + 1;
+            roleMap[rKey] = (roleMap[rKey] || 0) + record.look_count;
         });
 
         // Find Top Visitor (by Count of Visits)
@@ -618,7 +666,7 @@ const DashboardMain = () => {
             {/* Employee Details Modal */}
             <EmployeeModal 
                 employee={selectedEmployee} 
-                allAttendanceData={attendanceData} 
+                allAttendanceData={{ records: attendanceData, alerts: anomalies }} 
                 onClose={() => setSelectedEmployee(null)} 
             />
         </DashboardLayout>

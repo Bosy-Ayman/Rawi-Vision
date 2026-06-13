@@ -22,5 +22,9 @@ class Employee(Base):
     embedding: Mapped[list[float] | None] = mapped_column(Vector(512), nullable=True) # bosy told me each embedding should be 512 d
     embedding_status: Mapped[str] = mapped_column(nullable=False)
     profile_image_url: Mapped[str | None] = mapped_column(sqlalchemy.String, nullable=True)
+    assigned_camera_ids: Mapped[list[str] | None] = mapped_column(ARRAY(sqlalchemy.String), nullable=True)
+    assigned_days: Mapped[list[int] | None] = mapped_column(ARRAY(sqlalchemy.Integer), nullable=True)
+    assigned_shift_start: Mapped[str | None] = mapped_column(sqlalchemy.String, nullable=True) # HH:MM format
+    assigned_shift_end: Mapped[str | None] = mapped_column(sqlalchemy.String, nullable=True)   # HH:MM format
     date_created : Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

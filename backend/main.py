@@ -1,3 +1,42 @@
+import sys
+import os
+
+# Limit CPU threads to prevent CPU spikes and supervisor container kills
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
+# Disable tqdm progress bars globally to avoid stdout/stderr flush crashes on Windows background tasks
+os.environ["TQDM_DISABLE"] = "1"
+os.environ["DISABLE_TQDM"] = "1"
+
+# Patch stdout and stderr to ignore Errno 22 (invalid argument) when writing/flushing in background redirected streams
+for stream in (sys.stdout, sys.stderr):
+    if stream is not None:
+        original_flush = getattr(stream, "flush", None)
+        if original_flush:
+            def make_safe_flush(orig):
+                def safe_flush(*args, **kwargs):
+                    try:
+                        return orig(*args, **kwargs)
+                    except Exception:
+                        pass
+                return safe_flush
+            stream.flush = make_safe_flush(original_flush)
+
+        original_write = getattr(stream, "write", None)
+        if original_write:
+            def make_safe_write(orig):
+                def safe_write(*args, **kwargs):
+                    try:
+                        return orig(*args, **kwargs)
+                    except Exception:
+                        return 0
+                return safe_write
+            stream.write = make_safe_write(original_write)
+
 import asyncio
 import logging
 from contextlib import asynccontextmanager
@@ -32,6 +71,11 @@ async def lifespan(app: FastAPI):
              and the RabbitMQ attendance consumer as a background thread.
     Shutdown: cancels them cleanly.
     """
+    # Ensure database tables are created once at startup
+    from database import engine, Base
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
     async for _ in get_db():
         break
 

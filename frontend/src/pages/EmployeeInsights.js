@@ -9,6 +9,7 @@ import './EmployeeInsights.css';
 const EmployeeInsights = () => {
     const [employees, setEmployees] = useState([]);
     const [attendanceData, setAttendanceData] = useState([]);
+    const [anomalies, setAnomalies] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedRole, setSelectedRole] = useState('All');
     const [isLoading, setIsLoading] = useState(true);
@@ -17,12 +18,15 @@ const EmployeeInsights = () => {
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const [empData, attData] = await Promise.all([
+                const { anomalyAPI } = require('../api/anomalies');
+                const [empData, attData, anomData] = await Promise.all([
                     employeeAPI.getAllEmployees(),
-                    attendanceAPI.getAllAttendance()
+                    attendanceAPI.getAllAttendance(),
+                    anomalyAPI.getAnomalies().catch(() => [])
                 ]);
                 setEmployees(empData);
                 setAttendanceData(attData);
+                setAnomalies(anomData);
             } catch (err) {
                 console.error("Failed to fetch employees and attendance:", err);
             } finally {
@@ -172,7 +176,7 @@ const EmployeeInsights = () => {
             {/* Employee Details Modal */}
             <EmployeeModal 
                 employee={selectedEmployee} 
-                allAttendanceData={attendanceData} 
+                allAttendanceData={{ records: attendanceData, alerts: anomalies }} 
                 onClose={() => setSelectedEmployee(null)} 
             />
         </DashboardLayout>

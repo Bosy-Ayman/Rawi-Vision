@@ -39,6 +39,7 @@ function App() {
             <Route path="/dashboard/video-feed" element={<SubscriptionGuard><VideoFeedPage /></SubscriptionGuard>} />
             <Route path="/dashboard/smart-search" element={<SubscriptionGuard><SmartSearch /></SubscriptionGuard>} />
             <Route path="/dashboard/anomalies" element={<SubscriptionGuard><Anomalies /></SubscriptionGuard>} />
+            <Route path="/dashboard/room-alerts" element={<SubscriptionGuard><Anomalies /></SubscriptionGuard>} />
             <Route path="/dashboard/clips" element={<SubscriptionGuard><Clips /></SubscriptionGuard>} />
             <Route path="/dashboard/employee-onboarding" element={<SubscriptionGuard><EmployeeOnboarding /></SubscriptionGuard>} />
             <Route path="/dashboard/all-employees" element={<SubscriptionGuard><AllEmployees /></SubscriptionGuard>} />

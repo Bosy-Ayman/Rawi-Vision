@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
 import { searchAPI } from '../api/search';
 import { BASE_URL } from '../api/client';
@@ -15,6 +15,7 @@ const Clips = () => {
     const [loadingFrames, setLoadingFrames] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [searchTermTimeline, setSearchTermTimeline] = useState('');
+    const [selectedPersonTimeline, setSelectedPersonTimeline] = useState('All');
     
     const [activeRecordings, setActiveRecordings] = useState([]);
     const [ticker, setTicker] = useState(0);
@@ -112,6 +113,7 @@ const Clips = () => {
         setSelectedVideo(video);
         setCurrentTime(0);
         setSearchTermTimeline('');
+        setSelectedPersonTimeline('All');
         setLoadingFrames(true);
         try {
             const data = await searchAPI.getVideoFrames(video.video_id);
@@ -129,6 +131,7 @@ const Clips = () => {
         setFrames([]);
         setCurrentTime(0);
         setSearchTermTimeline('');
+        setSelectedPersonTimeline('All');
     };
 
     const handleSeekToFrame = (timestamp) => {
@@ -237,6 +240,16 @@ const Clips = () => {
         }
         return 0;
     });
+
+    const detectedPeople = useMemo(() => {
+        const people = new Set();
+        frames.forEach(f => {
+            if (f.identities) {
+                f.identities.forEach(name => people.add(name));
+            }
+        });
+        return ['All', ...Array.from(people)];
+    }, [frames]);
 
     return (
         <DashboardLayout title="Video Clips Library">
@@ -530,6 +543,33 @@ const Clips = () => {
                                         <button className="clear-search-btn" onClick={() => setSearchTermTimeline('')}>&times;</button>
                                     )}
                                 </div>
+                                
+                                {detectedPeople.length > 1 && (
+                                    <div className="timeline-people-filters" style={{ padding: '8px 12px', display: 'flex', gap: '6px', flexWrap: 'wrap', borderBottom: '1px solid #e2e8f0', backgroundColor: '#f8fafc' }}>
+                                        <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '600', width: '100%', marginBottom: '4px' }}>Filter by Person:</span>
+                                        {detectedPeople.map(person => (
+                                            <button
+                                                key={person}
+                                                onClick={() => setSelectedPersonTimeline(person)}
+                                                style={{
+                                                    backgroundColor: selectedPersonTimeline === person ? '#3b82f6' : '#f1f5f9',
+                                                    color: selectedPersonTimeline === person ? '#fff' : '#475569',
+                                                    border: 'none',
+                                                    borderRadius: '16px',
+                                                    padding: '3px 10px',
+                                                    fontSize: '0.75rem',
+                                                    fontWeight: '500',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.2s',
+                                                    outline: 'none'
+                                                }}
+                                            >
+                                                {person === 'All' ? '👥 All People' : `👤 ${person}`}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+
                                 {loadingFrames ? (
                                     <div className="timeline-loading">Loading AI descriptions...</div>
                                 ) : frames.length === 0 ? (
@@ -539,7 +579,12 @@ const Clips = () => {
                                         <div className="timeline-list-track">
                                             {frames
                                                 .map((frame, index) => ({ ...frame, originalIndex: index }))
-                                                .filter(frame => frame.description.toLowerCase().includes(searchTermTimeline.toLowerCase()))
+                                                .filter(frame => {
+                                                    const matchesSearch = frame.description.toLowerCase().includes(searchTermTimeline.toLowerCase());
+                                                    const matchesPerson = selectedPersonTimeline === 'All' || 
+                                                        (frame.identities && frame.identities.includes(selectedPersonTimeline));
+                                                    return matchesSearch && matchesPerson;
+                                                })
                                                 .map((frame) => {
                                                     const isActive = frame.originalIndex === activeFrameIndex;
                                                     return (
@@ -567,6 +612,27 @@ const Clips = () => {
                                                                                         {parsed.tags.map((tag, tIdx) => (
                                                                                             <span key={tIdx} className={`timeline-tag ${tag.type}`}>
                                                                                                 <strong>{tag.label}:</strong> {tag.value}
+                                                                                            </span>
+                                                                                        ))}
+                                                                                    </div>
+                                                                                )}
+                                                                                
+                                                                                {frame.identities && frame.identities.length > 0 && (
+                                                                                    <div className="timeline-identities-row" style={{ marginTop: '6px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                                                                        {frame.identities.map((name, nIdx) => (
+                                                                                            <span key={nIdx} className="timeline-identity-tag" style={{
+                                                                                                backgroundColor: '#eff6ff',
+                                                                                                color: '#1e40af',
+                                                                                                border: '1px solid #bfdbfe',
+                                                                                                borderRadius: '12px',
+                                                                                                padding: '2px 8px',
+                                                                                                fontSize: '0.75rem',
+                                                                                                fontWeight: '600',
+                                                                                                display: 'inline-flex',
+                                                                                                alignItems: 'center',
+                                                                                                gap: '4px'
+                                                                                            }}>
+                                                                                                👤 {name}
                                                                                             </span>
                                                                                         ))}
                                                                                     </div>

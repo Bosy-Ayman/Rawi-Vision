@@ -257,3 +257,93 @@
     font-weight: 600;
     color: #0f172a;
 }
+
+.days-selector {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.day-pill {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1px solid #d1d5db;
+    background: white;
+    color: #4b5563;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.day-pill.active {
+    background: #3b82f6;
+    color: white;
+    border-color: #3b82f6;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+}
+
+.day-pill:hover {
+    transform: scale(1.05);
+}
+
+/* Custom Multiselect dropdown styling */
+.custom-multiselect-container {
+    position: relative;
+    width: 100%;
+}
+
+.multiselect-trigger {
+    padding: 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    background: white;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-sizing: border-box;
+}
+
+.multiselect-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    margin-top: 4px;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 100;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    padding: 8px;
+    box-sizing: border-box;
+}
+
+.multiselect-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s;
+    user-select: none;
+}
+
+.multiselect-item:hover {
+    background: #f3f4f6;
+}
+
+.multiselect-item input {
+    cursor: pointer;
+    width: auto;
+}

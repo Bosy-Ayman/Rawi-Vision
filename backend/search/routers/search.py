@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, s
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import delete
+from sqlalchemy import delete, text
 from minio import Minio
 
 from database import get_db, db_dependency
@@ -650,12 +650,42 @@ async def get_video_frames(video_id: uuid.UUID, db: db_dependency):
     result_frames = await db.execute(stmt_frames)
     frames = result_frames.scalars().all()
     
-    return [
-        VideoFrameResponse(
-            frame_number=f.frame_number,
-            timestamp_offset=f.timestamp_offset,
-            description=f.description
-        ) for f in frames
-    ]
+    # Fetch all appearances for this video from video_appearances table
+    stmt_apps = text("""
+        SELECT va.frame_number, e.first_name, e.last_name
+        FROM video_appearances va
+        JOIN employees e ON va.employee_id = e.id
+        WHERE va.video_id = :video_id
+    """)
+    result_apps = await db.execute(stmt_apps, {"video_id": str(video_id)})
+    apps_rows = result_apps.fetchall()
+    
+    # Map frame_number -> list of employee names
+    frame_to_names = {}
+    for frame_num, first_name, last_name in apps_rows:
+        full_name = f"{first_name} {last_name}".strip()
+        if frame_num not in frame_to_names:
+            frame_to_names[frame_num] = []
+        if full_name not in frame_to_names[frame_num]:
+            frame_to_names[frame_num].append(full_name)
+            
+    response_list = []
+    for f in frames:
+        frame_identities = frame_to_names.get(f.frame_number, [])
+        
+        enriched_description = f.description
+        if frame_identities:
+            if "[Real-time Identity" not in f.description:
+                enriched_description = f"{f.description} [Real-time Identity: {', '.join(frame_identities)}]"
+        
+        response_list.append(
+            VideoFrameResponse(
+                frame_number=f.frame_number,
+                timestamp_offset=f.timestamp_offset,
+                description=enriched_description,
+                identities=frame_identities
+            )
+        )
+    return response_list
 
 

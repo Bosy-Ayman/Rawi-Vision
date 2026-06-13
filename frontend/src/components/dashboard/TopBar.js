@@ -1,6 +1,55 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { anomalyAPI } from '../../api/anomalies';
+
+const BADGE_COLORS = {
+    violence: '#ef4444',
+    theft: '#f97316',
+    vandalism: '#f59e0b',
+    unusual_behavior: '#8b5cf6',
+    out_of_bounds: '#0ea5e9',
+    unknown: '#6b7280',
+};
+
+const TYPE_EMOJIS = {
+    violence: '⚠️',
+    theft: '🚨',
+    vandalism: '🛠️',
+    unusual_behavior: '👁️',
+    out_of_bounds: '🚪',
+    unknown: '❓'
+};
 
 const TopBar = ({ title }) => {
+    const [anomalies, setAnomalies] = useState([]);
+    const [showDropdown, setShowDropdown] = useState(false);
+    const navigate = useNavigate();
+
+    const fetchAlerts = async () => {
+        try {
+            const data = await anomalyAPI.getAnomalies();
+            setAnomalies(data || []);
+        } catch (err) {
+            console.error("TopBar failed to fetch notification alerts", err);
+        }
+    };
+
+    useEffect(() => {
+        fetchAlerts();
+        const intv = setInterval(fetchAlerts, 5000);
+        return () => clearInterval(intv);
+    }, []);
+
+    const dismissAlert = async (id, e) => {
+        e.stopPropagation();
+        try {
+            await anomalyAPI.deleteAnomaly(id);
+            setAnomalies(prev => prev.filter(a => a.id !== id));
+        } catch (err) {
+            console.error("Failed to dismiss alert", err);
+        }
+    };
+
     return (
         <header className="topbar">
             <h1 className="page-title">{title}</h1>
@@ -10,9 +59,125 @@ const TopBar = ({ title }) => {
                     🇺🇸 Eng (US) ⌄
                 </div>
 
-                <button className="notification-btn">
-                    🔔
-                </button>
+                <div className="notification-container" style={{ position: 'relative' }}>
+                    <button 
+                        className="notification-btn" 
+                        onClick={() => setShowDropdown(!showDropdown)}
+                        onDoubleClick={() => navigate('/dashboard/anomalies')}
+                        title="Double-click to view historical alerts list"
+                        style={{ cursor: 'pointer', position: 'relative' }}
+                    >
+                        🔔
+                        {anomalies.length > 0 && (
+                            <span className="notification-badge" style={{
+                                position: 'absolute',
+                                top: '-4px',
+                                right: '-4px',
+                                backgroundColor: '#ef4444',
+                                color: 'white',
+                                borderRadius: '50%',
+                                padding: '2px 6px',
+                                fontSize: '10px',
+                                fontWeight: 'bold'
+                            }}>
+                                {anomalies.length}
+                            </span>
+                        )}
+                    </button>
+
+                    {showDropdown && (
+                        <div className="notification-dropdown" style={{
+                            position: 'absolute',
+                            top: '45px',
+                            right: '0',
+                            width: '340px',
+                            background: '#1e293b',
+                            border: '1px solid #475569',
+                            borderRadius: '12px',
+                            boxShadow: '0 10px 15px -3px rgba(0,0,0,0.3)',
+                            zIndex: 1000,
+                            padding: '16px',
+                            fontFamily: 'Inter, sans-serif'
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #334155', paddingBottom: '8px' }}>
+                                <h4 style={{ margin: 0, color: '#f8fafc', fontSize: '14px', fontWeight: '600' }}>
+                                    Recent Notifications
+                                </h4>
+                                {anomalies.length > 0 && (
+                                    <button 
+                                        onClick={async () => {
+                                            if (window.confirm("Clear all notification logs?")) {
+                                                await anomalyAPI.deleteAll();
+                                                setAnomalies([]);
+                                            }
+                                        }}
+                                        style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '11px', cursor: 'pointer' }}
+                                    >
+                                        Clear All
+                                    </button>
+                                )}
+                            </div>
+                            
+                            <div style={{ maxHeight: '280px', overflowY: 'auto' }}>
+                                {anomalies.length === 0 ? (
+                                    <p style={{ color: '#94a3b8', fontSize: '12px', margin: '12px 0', textAlign: 'center' }}>No recent alerts.</p>
+                                ) : (
+                                    anomalies.map(alert => (
+                                        <div key={alert.id} style={{
+                                            padding: '10px 8px',
+                                            borderBottom: '1px solid #334155',
+                                            fontSize: '12px',
+                                            color: '#e2e8f0',
+                                            position: 'relative',
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            alignItems: 'flex-start',
+                                            gap: '8px'
+                                        }}>
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                                                    <span style={{ fontSize: '11px', color: '#ffffff', background: BADGE_COLORS[alert.anomaly_type] || '#6b7280', padding: '1px 6px', borderRadius: '4px', fontWeight: 'bold', textTransform: 'uppercase' }}>
+                                                        {TYPE_EMOJIS[alert.anomaly_type] || '❓'} {alert.anomaly_type.replace('_', ' ')}
+                                                    </span>
+                                                    <span style={{ color: '#94a3b8', fontSize: '10px' }}>
+                                                        {new Date(alert.detected_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                    </span>
+                                                </div>
+                                                <div style={{ color: '#cbd5e1', lineHeight: '1.4' }}>
+                                                    {alert.description}
+                                                </div>
+                                            </div>
+                                            <button 
+                                                onClick={(e) => dismissAlert(alert.id, e)}
+                                                style={{
+                                                    background: 'none',
+                                                    border: 'none',
+                                                    color: '#94a3b8',
+                                                    fontSize: '14px',
+                                                    cursor: 'pointer',
+                                                    padding: '0 4px',
+                                                    lineHeight: 1
+                                                }}
+                                                title="Dismiss notification"
+                                            >
+                                                ×
+                                            </button>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+
+                            <div style={{ textAlign: 'center', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #334155' }}>
+                                <button 
+                                    onClick={() => { navigate('/dashboard/anomalies'); setShowDropdown(false); }}
+                                    style={{ background: 'none', border: 'none', color: '#3b82f6', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}
+                                >
+                                    View All Alerts History →
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
 
                 <div className="user-profile">
                     <img

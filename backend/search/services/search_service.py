@@ -5,9 +5,10 @@ import uuid
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any
 from datetime import datetime
+import re
 
 from minio import Minio
-from sqlalchemy import desc
+from sqlalchemy import desc, text
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,9 +19,73 @@ EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DIM = 384
 COMBINED_DIM = EMBEDDING_DIM * 3
 
+STOPWORDS = {
+    'a', 'an', 'the', 'in', 'on', 'at', 'by', 'with', 'for', 'of', 'and', 'or', 'is', 'are', 'was', 'were', 
+    'be', 'been', 'being', 'to', 'from', 'he', 'she', 'it', 'they', 'them', 'his', 'her', 'their', 'him', 
+    'who', 'whom', 'what', 'which', 'whose', 'this', 'that', 'these', 'those', 'i', 'you', 'we', 'us'
+}
+
+def extract_query_keywords(query: str) -> set:
+    """Extract content words (non-stopwords) from query"""
+    words = set(re.findall(r'[a-zA-Z0-9]+', query.lower()))
+    return {w for w in words if w not in STOPWORDS and len(w) > 1}
+
+def levenshtein_distance(s1: str, s2: str) -> int:
+    if len(s1) < len(s2):
+        return levenshtein_distance(s2, s1)
+    if len(s2) == 0:
+        return len(s1)
+    previous_row = range(len(s2) + 1)
+    for i, c1 in enumerate(s1):
+        current_row = [i + 1]
+        for j, c2 in enumerate(s2):
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (c1 != c2)
+            current_row.append(min(insertions, deletions, substitutions))
+        previous_row = current_row
+    return previous_row[-1]
+
 # ----------------------------------------------------------------------
 # Query Encoder (Matches offline frame indexing dimension of 1152)
 # ----------------------------------------------------------------------
+
+class SafeStreamWrapper:
+    def __init__(self, original_stream):
+        self._original_stream = original_stream
+
+    def write(self, s):
+        try:
+            if self._original_stream is not None:
+                return self._original_stream.write(s)
+        except Exception:
+            pass
+        return 0
+
+    def flush(self):
+        try:
+            if self._original_stream is not None:
+                return self._original_stream.flush()
+        except Exception:
+            pass
+
+    def __getattr__(self, name):
+        return getattr(self._original_stream, name)
+
+def patch_streams():
+    import sys
+    # Limit PyTorch internal threads to prevent high CPU container kills
+    try:
+        import torch
+        torch.set_num_threads(1)
+        torch.set_num_interop_threads(1)
+    except Exception:
+        pass
+
+    if sys.stdout is not None and not isinstance(sys.stdout, SafeStreamWrapper):
+        sys.stdout = SafeStreamWrapper(sys.stdout)
+    if sys.stderr is not None and not isinstance(sys.stderr, SafeStreamWrapper):
+        sys.stderr = SafeStreamWrapper(sys.stderr)
 
 class QueryEncoder:
     _instance = None
@@ -32,6 +97,19 @@ class QueryEncoder:
         return cls._instance
 
     def __init__(self):
+        # Force tqdm/colorama to initialize and wrap standard streams first
+        try:
+            import tqdm
+        except Exception:
+            pass
+        try:
+            import colorama
+            colorama.init()
+        except Exception:
+            pass
+        # Patch the colorama-wrapped standard streams
+        patch_streams()
+
         import torch
         from sentence_transformers import SentenceTransformer
         device = "cpu"
@@ -66,6 +144,19 @@ class LLMReasoner:
         return cls._instance
 
     def __init__(self, model_name="Qwen/Qwen2.5-0.5B-Instruct"):
+        # Force tqdm/colorama to initialize first
+        try:
+            import tqdm
+        except Exception:
+            pass
+        try:
+            import colorama
+            colorama.init()
+        except Exception:
+            pass
+        # Patch the wrapped standard streams
+        patch_streams()
+
         import torch
         from transformers import AutoTokenizer, AutoModelForCausalLM
         print(f"[INFO] Loading local CPU LLM for reasoning: {model_name}...")
@@ -111,16 +202,32 @@ class LLMReasoner:
         context_lower = fused_visual.lower() + " " + fused_tracking.lower()
         has_direct_word_match = False
         if content_words:
-            context_words = set(re.findall(r'[a-zA-Z0-9]+', context_lower))
-            if content_words.issubset(context_words):
-                has_direct_word_match = True
+            context_words = {w for w in re.findall(r'[a-zA-Z0-9]+', context_lower) if w not in STOPWORDS}
+            
+            # Fuzzy match content words against context words
+            # If every content word matches at least one word in context_words (exactly, as substring, or with low Levenshtein distance),
+            # we consider it a direct word match and bypass the LLM validator.
+            has_direct_word_match = True
+            for cw in content_words:
+                word_matched = False
+                for ctx_w in context_words:
+                    if cw == ctx_w or (len(cw) >= 3 and len(ctx_w) >= 3 and (cw in ctx_w or ctx_w in cw)):
+                        word_matched = True
+                        break
+                    dist_limit = 2 if len(cw) >= 5 or len(ctx_w) >= 5 else 1
+                    if levenshtein_distance(cw, ctx_w) <= dist_limit:
+                        word_matched = True
+                        break
+                if not word_matched:
+                    has_direct_word_match = False
+                    break
 
         # If no direct keyword match, run Yes/No validation using LLM
         is_match = True
         if not has_direct_word_match:
             messages_val = [
-                {"role": "system", "content": "You are an AI analyzing security descriptions."},
-                {"role": "user", "content": f"Context:\n{fused_visual}\n\nQuestion: Does the Context contain any description, mention, or objects related to '{query}'? Reply with only 'Yes' or 'No'."}
+                {"role": "system", "content": "You are a strict validator. Reply with ONLY 'Yes' or 'No'."},
+                {"role": "user", "content": f"Context:\n{fused_visual}\n\nQuestion: Does the Context contain any description, mention, or objects related to '{query}'? Reply with ONLY 'Yes' or 'No'."}
             ]
             prompt_val = self.tokenizer.apply_chat_template(messages_val, tokenize=False, add_generation_prompt=True)
             inputs_val = self.tokenizer(prompt_val, return_tensors="pt", truncation=True, max_length=1024)
@@ -128,16 +235,22 @@ class LLMReasoner:
             with torch.no_grad():
                 outputs_val = self.model.generate(
                     **inputs_val,
-                    max_new_tokens=5,
+                    max_new_tokens=10,
                     do_sample=False,
-                    repetition_penalty=1.1,
                     pad_token_id=self.tokenizer.pad_token_id,
                     eos_token_id=self.tokenizer.eos_token_id,
                 )
             input_length_val = inputs_val["input_ids"].shape[1]
             val_answer = self.tokenizer.decode(outputs_val[0][input_length_val:], skip_special_tokens=True).strip()
-            if val_answer.lower().startswith("no"):
+            
+            val_clean = val_answer.lower()
+            # A match is ONLY valid if the answer explicitly says "yes" and does not say "no"
+            if "yes" in val_clean and "no" not in val_clean:
+                is_match = True
+            else:
                 is_match = False
+            print(f"[DEBUG LLM Validator] Query: {repr(query)} | Raw Answer: {repr(val_answer)} | val_clean: {repr(val_clean)} | is_match: {is_match}")
+
 
         if not is_match:
             return "No matching events or objects found in this video."
@@ -225,9 +338,25 @@ class SearchService:
                 try:
                     events = []
                     with open(p, "r", encoding="utf-8") as f:
-                        reader = csv.DictReader(f)
-                        for row in reader:
-                            events.append(row)
+                        sample = f.read(2048)
+                        f.seek(0)
+                        
+                        has_header = False
+                        if sample:
+                            first_line = sample.split("\n")[0].lower()
+                            if "track_id" in first_line or "name" in first_line or "event" in first_line:
+                                has_header = True
+                                
+                        if has_header:
+                            reader = csv.DictReader(f)
+                            for row in reader:
+                                events.append(row)
+                        else:
+                            fieldnames = ["timestamp", "event_type", "track_id", "name", "confidence", "metadata"]
+                            reader = csv.DictReader(f, fieldnames=fieldnames)
+                            for row in reader:
+                                events.append(row)
+                                
                     print(f"[INFO] Successfully loaded {len(events)} real-time biometric events from {p}")
                     return events
                 except Exception as e:
@@ -244,33 +373,86 @@ class SearchService:
 
         # Perform pgvector cosine similarity search using SQLAlchemy
         # Vector cosine distance is (1 - CosineSimilarity)
+        # We increase the limit to 100 to allow candidate filtering/boosting in python
         stmt = (
             select(VideoFrame, (1 - VideoFrame.embedding.cosine_distance(query_vector)).label("similarity"))
             .filter(VideoFrame.video_id == video_id)
             .order_by(desc("similarity"))
-            .limit(top_k)
+            .limit(100)
         )
         
         result = await db.execute(stmt)
         rows = result.all()
 
-        # Load events.csv to map identities
-        rt_events = self.load_realtime_events()
-        query_words_lower = [w.strip(".,?!()\"'").lower() for w in query.split()]
+        # Fetch all appearances for this video from video_appearances table
+        stmt_apps = text("""
+            SELECT va.frame_number, va.employee_id, e.first_name, e.last_name
+            FROM video_appearances va
+            JOIN employees e ON va.employee_id = e.id
+            WHERE va.video_id = :video_id
+        """)
+        result_apps = await db.execute(stmt_apps, {"video_id": str(video_id)})
+        apps_rows = result_apps.fetchall()
         
-        # Track names or track IDs matching query
-        matched_rt_tracks = set()
-        for row in rt_events:
-            row_name = row.get("name", "").strip().lower()
-            if row_name and row_name != "unknown":
-                if any(word == row_name or row_name in word for word in query_words_lower):
-                    track_id_str = row.get("track_id", "")
-                    if track_id_str:
-                        matched_rt_tracks.add(int(track_id_str))
+        # Build mapping of frame_number -> list of employee names
+        # and frame_number -> set of employee IDs
+        frame_to_names = {}
+        frame_to_emp_ids = {}
+        for frame_num, emp_id, first_name, last_name in apps_rows:
+            full_name = f"{first_name} {last_name}".strip()
+            
+            if frame_num not in frame_to_names:
+                frame_to_names[frame_num] = []
+            if full_name not in frame_to_names[frame_num]:
+                frame_to_names[frame_num].append(full_name)
+                
+            if frame_num not in frame_to_emp_ids:
+                frame_to_emp_ids[frame_num] = set()
+            frame_to_emp_ids[frame_num].add(str(emp_id))
+
+        # Query all employees to match query keywords for identity-based filtering
+        stmt_emp = text("SELECT id, first_name, last_name FROM employees")
+        result_emp = await db.execute(stmt_emp)
+        employees = result_emp.fetchall()
+        
+        # Extract query keywords and clean the full query string
+        query_keywords = extract_query_keywords(query)
+        q_clean = query.strip().lower()
+        
+        matched_employee_ids = set()
+        for emp_id, first_name, last_name in employees:
+            first_name_clean = first_name.strip().lower()
+            last_name_clean = last_name.strip().lower()
+            emp_name_parts = {first_name_clean, last_name_clean}
+            fullname = f"{first_name_clean} {last_name_clean}"
+            fullname_no_space = f"{first_name_clean}{last_name_clean}"
+            
+            matched = False
+            # 1. Direct query-level checks
+            if q_clean == first_name_clean or q_clean == last_name_clean or q_clean == fullname:
+                matched = True
+            elif len(q_clean) >= 3 and (q_clean in fullname or fullname in q_clean or q_clean in fullname_no_space):
+                matched = True
+            else:
+                # 2. Keyword-level checks
+                for keyword in query_keywords:
+                    for part in emp_name_parts:
+                        if keyword == part or keyword in part or part in keyword:
+                            matched = True
+                            break
+                        dist_limit = 2 if len(part) >= 5 or len(keyword) >= 5 else 1
+                        if levenshtein_distance(keyword, part) <= dist_limit:
+                            matched = True
+                            break
+                    if matched:
+                        break
+                    
+            if matched:
+                matched_employee_ids.add(str(emp_id))
 
         results = []
         raw_descriptions_map = {}  # map frame_number to clean VLM desc
-        active_track_ids = set()
+        active_employee_names = set()
 
         SIM_THRESHOLD = 35.0
 
@@ -282,12 +464,13 @@ class SearchService:
             if sim < SIM_THRESHOLD:
                 continue
                 
-            frame_track_ids = []
-            if frame_row.tracks:
-                try:
-                    frame_track_ids = [int(t) for t in frame_row.tracks.split(",") if t.strip()]
-                except ValueError:
-                    pass
+            frame_num = frame_row.frame_number
+            frame_emp_ids = frame_to_emp_ids.get(frame_num, set())
+            
+            # Hard filter: If query matched an identity in events, restrict candidates to that identity
+            if matched_employee_ids:
+                if not (frame_emp_ids & matched_employee_ids):
+                    continue
             
             # Remove redundant OCR from objects section in description
             desc_parts = frame_row.description.split(" | ")
@@ -298,17 +481,13 @@ class SearchService:
                 desc_parts[1] = obj_part
             cleaned_db_desc = " | ".join(desc_parts)
 
+            frame_identities = frame_to_names.get(frame_num, [])
+            for name in frame_identities:
+                active_employee_names.add(name)
+                
             enriched_desc = cleaned_db_desc
-            active_names = []
-            for t in frame_track_ids:
-                active_track_ids.add(t)
-                for row in rt_events:
-                    if row.get("track_id") == str(t) and row.get("name") and row.get("name").lower() != "unknown":
-                        active_names.append(f"{row.get('name')} (Track {t})")
-                        break
-            
-            if active_names:
-                enriched_desc = f"{cleaned_db_desc} [Real-time Identity: {', '.join(active_names)}]"
+            if frame_identities:
+                enriched_desc = f"{cleaned_db_desc} [Real-time Identity: {', '.join(frame_identities)}]"
 
             # Generate proxy clip URL through FastAPI (avoids MinIO CORS issues)
             clip_object_name = f"extracted_clips/{video_id}/clip_frame_{frame_row.frame_number}_{frame_row.timestamp_offset:.2f}s.webm"
@@ -326,7 +505,8 @@ class SearchService:
                 "similarity": sim,
                 "description": enriched_desc,
                 "clip_url": clip_url,
-                "track_ids": frame_track_ids
+                "track_ids": [],
+                "identities": frame_identities
             })
             raw_descriptions_map[frame_row.frame_number] = frame_row.description.split(" | ")[0]
 
@@ -342,12 +522,14 @@ class SearchService:
             if not is_redundant:
                 deduped_results.append(r)
                 
-        results = sorted(deduped_results, key=lambda x: x["timestamp"])
+        # Limit to top_k matching candidates
+        top_k_results = deduped_results[:top_k]
+        results = sorted(top_k_results, key=lambda x: x["timestamp"])
 
         # Re-build descriptions list from the deduplicated results
         descriptions = [raw_descriptions_map[r["frame_id"]] for r in results]
 
-        # Short-circuit if no frames met the similarity threshold
+        # Short-circuit if no frames met the similarity threshold or filter
         if not results:
             return {
                 "query": query,
@@ -357,25 +539,31 @@ class SearchService:
                 "llm_answer": "No matching events or objects found in this video."
             }
 
-        # Build Re-ID timeline of when each track ID was seen throughout the video
+        # Build Re-ID timeline of when each matched employee was seen throughout the video
         reid_tracks = {}
-        if active_track_ids:
-            # Query all frames to trace the timeline of active track IDs
-            all_frames_stmt = select(VideoFrame).filter(VideoFrame.video_id == video_id).order_by(VideoFrame.timestamp_offset)
-            all_frames_result = await db.execute(all_frames_stmt)
-            all_frames = all_frames_result.scalars().all()
-
-            for track_id in active_track_ids:
+        if active_employee_names:
+            # Query all appearances for these employees in this video to trace their timeline
+            stmt_all_apps = text("""
+                SELECT va.frame_number, va.timestamp_offset, e.first_name, e.last_name
+                FROM video_appearances va
+                JOIN employees e ON va.employee_id = e.id
+                WHERE va.video_id = :video_id
+                ORDER BY va.timestamp_offset
+            """)
+            result_all_apps = await db.execute(stmt_all_apps, {"video_id": str(video_id)})
+            all_apps = result_all_apps.fetchall()
+            
+            for name in active_employee_names:
                 appearances = []
-                for f in all_frames:
-                    if f.tracks:
-                        f_track_ids = [int(t) for t in f.tracks.split(",") if t.strip()]
-                        if track_id in f_track_ids:
-                            appearances.append({
-                                "frame_id": f.frame_number,
-                                "timestamp": round(f.timestamp_offset, 2)
-                            })
-                reid_tracks[f"Track {track_id}"] = appearances
+                for frame_num, ts_offset, first_name, last_name in all_apps:
+                    full_name = f"{first_name} {last_name}".strip()
+                    if full_name == name:
+                        appearances.append({
+                            "frame_id": frame_num,
+                            "timestamp": round(ts_offset, 2)
+                        })
+                if appearances:
+                    reid_tracks[name] = appearances
 
         # Generate timeline tracking summary context
         tracking_context_str = ""
@@ -402,8 +590,21 @@ class SearchService:
                 llm_answer = await asyncio.to_thread(llm.answer, query, combined_descriptions)
                 
                 # If LLM reasoner determines no matching events, filter out the results
-                if llm_answer == "No matching events or objects found in this video.":
+                llm_lower = llm_answer.lower() if llm_answer else ""
+                negative_phrases = [
+                    "no matching events", 
+                    "no matching objects", 
+                    "no information", 
+                    "not found in this video",
+                    "not found in the",
+                    "not mentioned in the", 
+                    "does not contain", 
+                    "does not mention",
+                    "no events or objects found"
+                ]
+                if llm_answer == "No matching events or objects found in this video." or any(phrase in llm_lower for phrase in negative_phrases):
                     results = []
+                    llm_answer = "No matching events or objects found in this video."
             except Exception as e:
                 print(f"[WARN] Local CPU LLM execution failed: {e}")
                 llm_answer = "Local LLM reasoning unavailable."
