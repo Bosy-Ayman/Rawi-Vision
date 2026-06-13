@@ -303,7 +303,8 @@ const Summarization = () => {
                   src={activeVideo.url}
                   className="sum-modal-video"
                   controls
-                  autoPlay
+                  preload="auto"
+                  playsInline
                 />
               </div>
               <p className="sum-modal-footer">
