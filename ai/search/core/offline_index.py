@@ -202,8 +202,8 @@ class FrameEncoder:
                 "host": os.getenv("DB_HOST", "127.0.0.1"),
                 "port": int(os.getenv("DB_PORT", 5433)),
                 "dbname": os.getenv("DB_NAME", "rawivision_db"),
-                "user": os.getenv("DB_USER", "postgres"),
-                "password": os.getenv("DB_PASSWORD", "postgres"),
+                "user": os.getenv("DB_USER", "shahd"),
+                "password": os.getenv("DB_PASSWORD", "password"),
             }
             self.face_manager = EmbeddingManager(db_config=db_config)
             self.face_manager.load_db_into_memory()
