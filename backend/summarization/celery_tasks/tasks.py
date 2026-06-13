@@ -50,7 +50,7 @@ def faststart_mp4(input_path: str) -> str:
     try:
         result = subprocess.run(
             [ffmpeg_path, "-y", "-i", input_path,
-             "-c", "copy", "-movflags", "+faststart",
+             "-vcodec", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
              fixed_path],
             capture_output=True, text=True, timeout=120
         )
