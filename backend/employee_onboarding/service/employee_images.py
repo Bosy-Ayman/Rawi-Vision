@@ -1,7 +1,5 @@
 import uuid
 from ..utils.minio_storage_client import MinioStorageClient
-from urllib.parse import urlparse
-from pathlib import PurePosixPath
 
 class EmployeeImagesService:
     def __init__(self, minio_client: MinioStorageClient): # constructor dependency injection

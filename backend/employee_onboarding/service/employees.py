@@ -6,10 +6,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from minio.error import S3Error
 import uuid
 from ..exceptions import EmployeeNotFound
-from ..celery_tasks.embedding import create_embedding_task
+from ..celery_tasks.embedding.tasks import create_embedding_task
 from .employee_images import EmployeeImagesService
 from ..schemas.employee import EmployeeResponse
 import asyncio
+import numpy as np
+from pgvector.sqlalchemy import Vector
 
 class EmployeeService:
     def __init__ (self, repository: EmployeeRepository, object_storage:MinioStorageClient, employee_image_service: EmployeeImagesService): # constructor dependency injection
@@ -25,6 +27,13 @@ class EmployeeService:
             for picture in employee_pictures:
                 await self.object_storage.add_object_to_bucket(picture, bucket_name= self.bucket_name, object_name=f"{new_employee.id}/{picture.filename}")
                 uploaded_files.append(picture)
+                
+                # Save the first uploaded picture as the profile_image_url
+                if not new_employee.profile_image_url:
+                    # Construct URL directly to Minio
+                    minio_endpoint = self.object_storage.minio_client._endpoint_link
+                    new_employee.profile_image_url = f"{minio_endpoint}/{self.bucket_name}/{new_employee.id}/{picture.filename}"
+
             await self.repository.db.commit()
             await self.repository.db.refresh(new_employee)
             # need to figure out a workaround if the celery task fails - using saga pattern 
@@ -74,6 +83,7 @@ class EmployeeService:
             update_data = updated_employee_info.model_dump(exclude_unset=True)
             for field, value in update_data.items():
                 setattr(employee, field, value)
+            print("BEFORE COMMIT:", type(employee.embedding), str(employee.embedding)[:60])
             await self.repository.db.commit()
             await self.repository.db.refresh(employee)
             return employee

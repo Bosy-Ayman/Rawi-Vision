@@ -1,33 +1,247 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
+import { cameraAPI as ingestionAPI } from '../api/cameras';
+import { cameraAPI as discoveryAPI } from '../api/camera';
+import { anomalyAPI } from '../api/anomalies';
+import CameraCard from '../components/camera/CameraCard';
+import ToastNotification from '../components/modals/ToastNotification';
+import './VideoFeed.css';
 
 const VideoFeedPage = () => {
-    const feeds = [1, 2, 3, 4]; // 4 cameras
+    const [cameras, setCameras] = useState([]);
+    const [activeCameraId, setActiveCameraId] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [hasAccess, setHasAccess] = useState(true);
+    const [ingestionStatus, setIngestionStatus] = useState('Idle');
+    const [anomalyStatus, setAnomalyStatus] = useState('Idle');
+    const [isActionLoading, setIsActionLoading] = useState(false);
+    const [isAnomalyLoading, setIsAnomalyLoading] = useState(false);
+    const [notification, setNotification] = useState(null);
+
+    useEffect(() => {
+        // Enforce role access control locally
+        const role = localStorage.getItem('user_role');
+        if (role !== 'Manager' && role !== 'HR') {
+            setHasAccess(false);
+            setLoading(false);
+            return;
+        }
+
+        ingestionAPI.getAllCameras()
+            .then((data) => {
+                setCameras(data || []);
+                if (data && data.length > 0) {
+                    setActiveCameraId(data[0].id || data[0].ip_address || data[0].mac_address);
+                }
+                setLoading(false);
+            })
+            .catch((err) => {
+                console.error("Failed to load cameras", err);
+                setError(err.detail || 'Failed to load cameras.');
+                setLoading(false);
+            });
+    }, []);
+
+
+    const handleStartIngestion = async () => {
+        setIsActionLoading(true);
+        try {
+            // Trigger the pipeline directly using cameras already in the database
+            await ingestionAPI.startIngestion();
+            setIngestionStatus('Running');
+        } catch (err) {
+            console.error("Start ingestion failed", err);
+            alert("Failed to start ingestion");
+        } finally {
+            setIsActionLoading(false);
+        }
+    };
+
+    const handleStopIngestion = async () => {
+        setIsActionLoading(true);
+        try {
+            await ingestionAPI.stopIngestion();
+            setIngestionStatus('Stopped');
+        } catch (err) {
+            console.error("Stop ingestion failed", err);
+            alert("Failed to stop ingestion");
+        } finally {
+            setIsActionLoading(false);
+        }
+    };
+
+    const handleStartAnomaly = async () => {
+        setIsAnomalyLoading(true);
+        try {
+            await anomalyAPI.startAnomaly();
+            setAnomalyStatus('Analyzing');
+            setNotification({
+                type: 'success',
+                title: 'AI Started',
+                message: 'Anomaly detection models are now running in the background.'
+            });
+            setTimeout(() => setNotification(null), 5000);
+        } catch (err) {
+            console.error("Start anomaly failed", err);
+            setNotification({
+                type: 'error',
+                title: 'AI Failed',
+                message: 'Failed to start anomaly detection.'
+            });
+            setTimeout(() => setNotification(null), 5000);
+        } finally {
+            setIsAnomalyLoading(false);
+        }
+    };
+
+    const handleStopAnomaly = async () => {
+        setIsAnomalyLoading(true);
+        try {
+            await anomalyAPI.stopAnomaly();
+            setAnomalyStatus('Stopped');
+            setNotification({
+                type: 'info',
+                title: 'AI Stopped',
+                message: 'Anomaly detection models have been turned off.'
+            });
+            setTimeout(() => setNotification(null), 5000);
+        } catch (err) {
+            console.error("Stop anomaly failed", err);
+            setNotification({
+                type: 'error',
+                title: 'AI Stop Failed',
+                message: 'Failed to stop anomaly detection.'
+            });
+            setTimeout(() => setNotification(null), 5000);
+        } finally {
+            setIsAnomalyLoading(false);
+        }
+    };
+
+
+    if (!hasAccess) {
+        return (
+            <DashboardLayout title="Video Feed">
+                <div className="access-denied-screen">
+                    <div className="access-denied-icon">🔒</div>
+                    <h2>Access Denied</h2>
+                    <p>You must be a Manager or HR representative to view live camera feeds.</p>
+                </div>
+            </DashboardLayout>
+        );
+    }
 
     return (
         <DashboardLayout title="Video Feed">
-            <div className="video-grid">
-                {feeds.map((id) => (
-                    <div key={id} className="video-card">
-                        <h3 className="video-title">Cafeteria camera</h3>
-                        <div className="video-player-placeholder">
-                            {/* Placeholder image acting as video feed */}
-                            <img
-                                src="/assets/images/camera.png"
-                                alt="Feed"
-                                style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.7 }}
-                            />
-                            <div className="video-controls-overlay">
-                                <button className="play-btn">❚❚</button>
-                                <div className="timeline-bar">
-                                    <div className="progress" style={{ width: '30%' }}></div>
-                                </div>
-                                <button className="volume-btn">🔊</button>
+            {notification && (
+                <ToastNotification
+                    type={notification.type}
+                    title={notification.title}
+                    message={notification.message}
+                    onClose={() => setNotification(null)}
+                />
+            )}
+            {loading && (
+                <div className="camera-loading-container">
+                    <p>Loading cameras...</p>
+                </div>
+            )}
+
+            {error && (
+                <div className="camera-error-container">
+                    <p>Error: {error}</p>
+                </div>
+            )}
+
+            {!loading && !error && cameras.length === 0 && (
+                <div className="camera-empty-container">
+                    <p>No cameras registered yet. Please onboard cameras first.</p>
+                </div>
+            )}
+
+            {!loading && !error && cameras.length > 0 && (
+                <>
+                    <div className="ingestion-control-bar" style={{ display: 'flex', gap: '10px', marginBottom: '20px', alignItems: 'center', backgroundColor: '#ffffff', padding: '15px', borderRadius: '8px', boxShadow: '0 4px 12px rgba(52, 152, 219, 0.1)', border: '1px solid #e1e8ed' }}>
+                        <span style={{ color: '#2c3e50', marginRight: '10px', fontWeight: '500' }}>Global Ingestion Pipeline: <strong style={{ color: '#3498db' }}>{ingestionStatus}</strong></span>
+                        <button
+                            onClick={handleStartIngestion}
+                            disabled={isActionLoading || ingestionStatus === 'Running'}
+                            style={{ padding: '8px 16px', backgroundColor: '#2ecc71', color: 'white', border: 'none', borderRadius: '4px', cursor: (isActionLoading || ingestionStatus === 'Running') ? 'not-allowed' : 'pointer', opacity: (isActionLoading || ingestionStatus === 'Running') ? 0.6 : 1 }}
+                        >
+                            Start Pipeline
+                        </button>
+                        <button
+                            onClick={handleStopIngestion}
+                            disabled={isActionLoading || ingestionStatus === 'Stopped'}
+                            style={{ padding: '8px 16px', backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '4px', cursor: (isActionLoading || ingestionStatus === 'Stopped') ? 'not-allowed' : 'pointer', opacity: (isActionLoading || ingestionStatus === 'Stopped') ? 0.6 : 1 }}
+                        >
+                            Stop Pipeline
+                        </button>
+
+                        <div className="vertical-divider" style={{ width: '1px', height: '30px', backgroundColor: '#e1e8ed', margin: '0 10px' }}></div>
+
+                        <span style={{ color: '#2c3e50', marginRight: '10px', fontWeight: '500' }}>AI Anomaly Detection: <strong style={{ color: '#9b59b6' }}>{anomalyStatus}</strong></span>
+                        <button
+                            onClick={handleStartAnomaly}
+                            disabled={isAnomalyLoading || anomalyStatus === 'Analyzing'}
+                            style={{ padding: '8px 16px', backgroundColor: '#8e44ad', color: 'white', border: 'none', borderRadius: '4px', cursor: (isAnomalyLoading || anomalyStatus === 'Analyzing') ? 'not-allowed' : 'pointer', opacity: (isAnomalyLoading || anomalyStatus === 'Analyzing') ? 0.6 : 1 }}
+                        >
+                            Start AI
+                        </button>
+                        <button
+                            onClick={handleStopAnomaly}
+                            disabled={isAnomalyLoading || anomalyStatus === 'Stopped'}
+                            style={{ padding: '8px 16px', backgroundColor: '#c0392b', color: 'white', border: 'none', borderRadius: '4px', cursor: (isAnomalyLoading || anomalyStatus === 'Stopped') ? 'not-allowed' : 'pointer', opacity: (isAnomalyLoading || anomalyStatus === 'Stopped') ? 0.6 : 1 }}
+                        >
+                            Stop AI
+                        </button>
+
+                        <div className="vertical-divider" style={{ width: '1px', height: '30px', backgroundColor: '#e1e8ed', margin: '0 10px' }}></div>
+
+                    </div>
+                    <div className="hog-vision-container">
+                        <div className="hog-vision-main">
+                            <h3 className="hog-vision-title">Selected Stream</h3>
+                            {cameras.find(c => (c.id || c.ip_address || c.mac_address) === activeCameraId) ? (
+                                <CameraCard 
+                                    key={`main-${activeCameraId}`}
+                                    camera={cameras.find(c => (c.id || c.ip_address || c.mac_address) === activeCameraId)} 
+                                />
+                            ) : (
+                                <CameraCard 
+                                    key={`main-default`}
+                                    camera={cameras[0]} 
+                                />
+                            )}
+                        </div>
+                        <div className="hog-vision-sidebar">
+                            <h3 className="hog-vision-title">Camera Sources</h3>
+                            <div className="hog-sidebar-grid">
+                                {cameras.map((camera) => {
+                                    const camId = camera.id || camera.ip_address || camera.mac_address;
+                                    const isActive = camId === activeCameraId;
+                                    return (
+                                        <div 
+                                            key={camId} 
+                                            className={`hog-sidebar-card ${isActive ? 'active' : ''}`}
+                                            onClick={() => setActiveCameraId(camId)}
+                                        >
+                                            <div className="hog-sidebar-card-header">
+                                                <span className={`status-indicator ${isActive ? 'active' : 'inactive'}`}></span>
+                                                <h4>{camera.room || 'Room'}</h4>
+                                            </div>
+                                            <p className="hog-sidebar-card-building">{camera.building || 'Building'}</p>
+                                            <p className="hog-sidebar-card-ip">{camera.ip_address || camera.mac_address}</p>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </div>
                     </div>
-                ))}
-            </div>
+
+                </>
+            )}
         </DashboardLayout>
     );
 };

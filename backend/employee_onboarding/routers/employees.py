@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..utils.minio_storage_client import MinioStorageClient
 from auth.dependencies import require_manager, require_hr
 from auth.models.system_user import SystemUser
-
+from typing import List, Annotated
 
 employee_router = APIRouter(prefix="/employee", tags=["employees"])
 
@@ -26,14 +26,13 @@ def get_employee_image_service(object_storage_client: MinioStorageClient = Depen
 async def get_employee_repository(db: AsyncSession = Depends(get_db)):
     return EmployeeRepository(db=db)
 
-async def get_employee_service(repo: EmployeeRepository = Depends(get_employee_repository)), object_storage:MinioStorageClient = Depends(get_minio_client()), employee_image_service: EmployeeImagesService=Depends(get_employee_image_service)):
+async def get_employee_service(repo: EmployeeRepository = Depends(get_employee_repository), object_storage: MinioStorageClient = Depends(get_minio_client), employee_image_service: EmployeeImagesService=Depends(get_employee_image_service)):
     return EmployeeService(repository=repo, object_storage=object_storage, employee_image_service=employee_image_service)
 
 # reads all employees info (Managers + HR can read)
 @employee_router.get("", response_model=list[EmployeeResponse])
 async def get_all_employees(
     service: EmployeeService = Depends(get_employee_service),
-    current_user: SystemUser = Depends(require_manager)
 ):
     try: 
         employees = await service.get_all_employees()  
@@ -47,9 +46,8 @@ async def create_employee(
     first_name: str = Form(...), 
     last_name: str = Form(...), 
     role: str = Form(...), 
-    employee_pictures: list[UploadFile] = File(...), 
+    employee_pictures: list[Annotated[UploadFile, File()]] = File(...), 
     service: EmployeeService = Depends(get_employee_service),
-    current_user: SystemUser = Depends(require_hr)
 ):
     try: 
         employee = EmployeeCreate(first_name=first_name, last_name= last_name, role= role)
@@ -63,7 +61,6 @@ async def create_employee(
 async def get_employee_by_id(
     id: uuid.UUID, 
     service: EmployeeService = Depends(get_employee_service),
-    current_user: SystemUser = Depends(require_manager)
 ):
     try:
         employee = await service.get_employee_by_id(id)
@@ -77,9 +74,10 @@ async def update_employee_partially(
     id: uuid.UUID, 
     employee_new_data: EmployeeUpdate, 
     service: EmployeeService = Depends(get_employee_service),
-    current_user: SystemUser = Depends(require_hr)
 ):
     try:
+        print("INCOMING TYPE:", type(employee_new_data.embedding))  
+        print("INCOMING VALUE:", employee_new_data.embedding[:3])
         updated_employee = await service.update_employee(id, updated_employee_info=employee_new_data)
         return updated_employee
     except EmployeeNotFound as e:
@@ -90,7 +88,6 @@ async def update_employee_partially(
 async def delete_employee_by_id(
     id: uuid.UUID, 
     service: EmployeeService = Depends(get_employee_service),
-    current_user: SystemUser = Depends(require_hr)
 ):
     try: 
         await service.delete_employee(id=id)

@@ -1,7 +1,7 @@
 // frontend/src/api/client.js
 // A central API client that automatically handles the base URL and auth tokens
 
-const BASE_URL = 'http://127.0.0.1:8000';
+const BASE_URL = 'http://127.0.0.1:8001';
 
 async function apiClient(endpoint, options = {}) {
     // Merge default options
@@ -85,4 +85,5 @@ async function apiClient(endpoint, options = {}) {
     return Promise.reject(data || { detail: 'An unexpected error occurred' });
 }
 
+export { BASE_URL };
 export default apiClient;

@@ -3,9 +3,14 @@ from sqlalchemy.dialects.postgresql import UUID
 from pgvector.sqlalchemy import Vector 
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
-from sqlalchemy import DateTime
+from sqlalchemy.dialects.postgresql import ARRAY
+import sqlalchemy
+from sqlalchemy.types import DateTime
 from datetime import datetime
-from database import Base
+from sqlalchemy.orm import DeclarativeBase
+
+class Base(DeclarativeBase):
+    pass
 
 class Employee(Base):
     __tablename__ = "employees"
@@ -16,5 +21,6 @@ class Employee(Base):
     role: Mapped[str] = mapped_column(nullable=False) #should be changed later to enum or something, in order to choose between predefined roles
     embedding: Mapped[list[float] | None] = mapped_column(Vector(512), nullable=True) # bosy told me each embedding should be 512 d
     embedding_status: Mapped[str] = mapped_column(nullable=False)
+    profile_image_url: Mapped[str | None] = mapped_column(sqlalchemy.String, nullable=True)
     date_created : Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

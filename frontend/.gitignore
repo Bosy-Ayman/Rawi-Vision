@@ -21,3 +21,33 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Virtual environments
+venv/
+**/venv/
+
+# VS Code
+.vscode/
+
+# Environment files
+.env
+
+# Videos
+*.webm
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# Model files
+*.pt
+
+# DLL files
+*.dll
+
+# Generated clips
+ai/search/extracted_clips/
+
+# Python cache
+__pycache__/
+*.pyc
