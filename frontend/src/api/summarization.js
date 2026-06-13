@@ -28,5 +28,10 @@ export const summarizationApi = {
       method: 'POST',
       body: JSON.stringify({ auto_summarize: autoSummarize })
     });
+  },
+
+  // Get live progress for a running task
+  getProgress: async (summaryId) => {
+    return apiClient(`/api/summarization/progress/${summaryId}`, { method: 'GET' });
   }
 };

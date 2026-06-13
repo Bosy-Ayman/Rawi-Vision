@@ -64,3 +64,18 @@ async def get_auto_summarize_settings():
         return {"auto_summarize": val == "true"}
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+@summarization_router.get("/progress/{summary_id}")
+async def get_summary_progress(summary_id: str):
+    """Returns live progress for a running summarization task from Redis."""
+    try:
+        key = f"summarization:progress:{summary_id}"
+        data = redis_client.hgetall(key)
+        if not data:
+            return {"percent": 0, "stage": "pending"}
+        return {
+            "percent": int(data.get("percent", 0)),
+            "stage": data.get("stage", "pending")
+        }
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))

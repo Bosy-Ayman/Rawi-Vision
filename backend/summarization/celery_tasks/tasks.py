@@ -96,9 +96,17 @@ _GLOBAL_YOLO_MODEL = None
 def generate_video_summary_task(self, summary_id: str, video_id: str, camera_id: str, source_storage_path: str):
     import cv2
     import shutil
-    
+
+    redis = get_redis_client()
+    progress_key = f"summarization:progress:{summary_id}"
+
+    def emit_progress(stage: str, pct: int):
+        redis.hset(progress_key, mapping={"stage": stage, "percent": str(pct)})
+        redis.expire(progress_key, 3600)
+
     print(f"[TASK] Starting video summarization for summary_id={summary_id}")
     update_summary_status(summary_id, "processing")
+    emit_progress("downloading", 0)
     
     try:
         minio = get_minio_client()
@@ -118,44 +126,57 @@ def generate_video_summary_task(self, summary_id: str, video_id: str, camera_id:
             
             print(f"[TASK] Downloading source video from MinIO: {source_storage_path}")
             minio.fget_object("camera-archive-videos", source_storage_path, tmp_src_path)
-            
+            emit_progress("downloading", 10)
+
             # Setup YOLO model
             global _GLOBAL_YOLO_MODEL
             if _GLOBAL_YOLO_MODEL is None:
                 print("[TASK] Loading YOLO model for summarization...")
-                # Note: path assumes the model is downloaded or exists in the expected location
+                emit_progress("loading_model", 15)
                 _GLOBAL_YOLO_MODEL = load_model(path="yolov8s.pt", use_gpu=True)
-                
+
             cap = cv2.VideoCapture(tmp_src_path)
             if not cap.isOpened():
                 raise RuntimeError(f"Cannot open video: {tmp_src_path}")
-            
+
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 1
+
             # Simple frame skip logic for summarization
-            frame_skip = 5 
+            frame_skip = 5
             motion = MotionFilter(threshold=25, min_area=800, adaptive=True)
-            
+
             saved_id = 0
             total_seen = 0
             frame_idx = 0
-            
+            last_pct = 0
+
             while True:
                 ret, frame = cap.read()
                 if not ret:
                     break
-                    
+
                 total_seen += 1
+
+                # Emit progress in the 20–70 % band
+                raw_pct = int(total_seen / total_frames * 100)
+                mapped_pct = 20 + int(raw_pct * 0.50)
+                if mapped_pct != last_pct:
+                    emit_progress("scanning_frames", mapped_pct)
+                    last_pct = mapped_pct
+
                 if frame_idx % frame_skip != 0:
                     frame_idx += 1
                     continue
-                    
+
                 if motion.is_motion(frame):
                     path = save_frame(base_output, camera_id, saved_id, frame, blur_faces=False)
                     if path:
                         saved_id += 1
-                        
+
                 frame_idx += 1
-                
+
             cap.release()
+            emit_progress("detecting_objects", 72)
             print(f"[TASK] Found {saved_id} motion frames out of {total_seen} total frames.")
             
             if saved_id == 0:
@@ -194,7 +215,8 @@ def generate_video_summary_task(self, summary_id: str, video_id: str, camera_id:
             # Upload final video back to MinIO
             dest_object_name = f"{camera_id}/{summary_id}_summary.mp4"
             ensure_bucket(minio, "camera-summaries")
-            
+
+            emit_progress("uploading", 90)
             print(f"[TASK] Uploading summary to MinIO: {dest_object_name}")
             minio.fput_object(
                 bucket_name="camera-summaries",
@@ -202,19 +224,21 @@ def generate_video_summary_task(self, summary_id: str, video_id: str, camera_id:
                 file_path=final_video_path,
                 content_type="video/mp4"
             )
-            
-            # Update DB
+
+            # Update DB and mark 100 %
             update_summary_status(summary_id, "completed", dest_object_name)
-            
+            emit_progress("completed", 100)
+
             try:
                 os.unlink(tmp_src_path)
             except:
                 pass
-                
+
             print(f"[TASK] Summarization completed for {summary_id}")
             return {"status": "completed", "summary_path": dest_object_name}
             
     except Exception as e:
         print(f"[ERROR] Summarization failed for {summary_id}: {e}")
         update_summary_status(summary_id, "failed")
+        emit_progress("failed", 0)
         raise
