@@ -14,7 +14,7 @@ import uuid
 from io import BytesIO
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -613,8 +613,8 @@ async def get_clip_status(video_id: uuid.UUID, frame_number: int, timestamp: flo
 
 
 @search_router.get("/video/{video_id}/stream")
-async def stream_full_video(video_id: uuid.UUID, db: db_dependency):
-    """Redirects to a presigned MinIO URL to stream the full video directly to the browser."""
+async def stream_full_video(video_id: uuid.UUID, request: Request, db: db_dependency):
+    """Redirects to a presigned MinIO URL to stream the full video directly to the browser, adjusting host dynamically."""
     from fastapi.responses import RedirectResponse
     from datetime import timedelta
     
@@ -632,6 +632,9 @@ async def stream_full_video(video_id: uuid.UUID, db: db_dependency):
             video.storage_path, 
             expires=timedelta(hours=1)
         )
+        # Rewrite the url host to use the request host (to support range requests on external devices)
+        request_host = request.url.hostname or "127.0.0.1"
+        url = url.replace("127.0.0.1", request_host).replace("localhost", request_host)
         return RedirectResponse(url)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating stream URL: {e}")

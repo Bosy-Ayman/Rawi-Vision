@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from typing import List
@@ -121,9 +121,11 @@ async def get_summary_video_url(summary_id: str, db: AsyncSession = Depends(get_
 
 
 @summarization_router.get("/video/{summary_id}/stream")
-async def stream_summary_video(summary_id: str, db: AsyncSession = Depends(get_db)):
-    """Streams the summary video from MinIO directly through FastAPI."""
+async def stream_summary_video(summary_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """Streams the summary video from MinIO directly through FastAPI supporting Range Requests."""
     from fastapi.responses import StreamingResponse
+    import re
+
     stmt = select(VideoSummary).filter(VideoSummary.id == summary_id)
     result = await db.execute(stmt)
     summary = result.scalars().first()
@@ -131,10 +133,44 @@ async def stream_summary_video(summary_id: str, db: AsyncSession = Depends(get_d
         raise HTTPException(status_code=404, detail="Summary not found")
     if summary.status != "completed" or not summary.summary_storage_path:
         raise HTTPException(status_code=400, detail="Summary not ready")
+
     try:
         minio = _get_minio()
-        response = minio.get_object("camera-summaries", summary.summary_storage_path)
+        # 1. Get object metadata (size)
+        stat = minio.stat_object("camera-summaries", summary.summary_storage_path)
+        file_size = stat.size
+
+        # 2. Parse the Range header
+        range_header = request.headers.get("range")
         
+        start = 0
+        end = file_size - 1
+        status_code = 200
+
+        if range_header:
+            match = re.match(r"bytes=(\d+)-(\d*)", range_header)
+            if match:
+                start = int(match.group(1))
+                if match.group(2):
+                    end = int(match.group(2))
+                status_code = 206
+
+        # Bound check
+        if start >= file_size:
+            raise HTTPException(status_code=416, detail="Requested Range Not Satisfiable")
+        if end >= file_size:
+            end = file_size - 1
+
+        content_length = end - start + 1
+
+        # 3. Request only the specific byte range from MinIO
+        response = minio.get_object(
+            "camera-summaries",
+            summary.summary_storage_path,
+            offset=start,
+            length=content_length
+        )
+
         def iter_file():
             try:
                 for chunk in response.stream(32 * 1024):
@@ -142,15 +178,22 @@ async def stream_summary_video(summary_id: str, db: AsyncSession = Depends(get_d
             finally:
                 response.close()
                 response.release_conn()
-                
+
+        headers = {
+            "Content-Disposition": f"inline; filename={summary_id}_summary.mp4",
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-cache",
+        }
+
+        if status_code == 206:
+            headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+            headers["Content-Length"] = str(content_length)
+
         return StreamingResponse(
             iter_file(),
+            status_code=status_code,
             media_type="video/mp4",
-            headers={
-                "Content-Disposition": f"inline; filename={summary_id}_summary.mp4",
-                "Accept-Ranges": "bytes",
-                "Cache-Control": "no-cache",
-            }
+            headers=headers
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
