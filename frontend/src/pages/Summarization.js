@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { summarizationApi } from '../api/summarization';
 import { searchAPI } from '../api/search';
+import { BASE_URL } from '../api/client';
 import ToastNotification from '../components/modals/ToastNotification';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
 import './Summarization.css';
@@ -189,9 +190,8 @@ const Summarization = () => {
               const stage       = prog?.stage ?? summary?.status ?? 'none';
               const isActive    = summary && (summary.status === 'processing' || summary.status === 'pending');
               const isCompleted = summary?.status === 'completed' && summary?.summary_storage_path;
-              const minioHost   = window.location.hostname || 'localhost';
               const videoUrl    = isCompleted
-                ? `http://${minioHost}:9000/camera-summaries/${summary.summary_storage_path}`
+                ? `${BASE_URL}/api/summarization/video/${summary.id}/stream`
                 : null;
 
               return (

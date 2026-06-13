@@ -93,6 +93,53 @@ def _encode_with_opencv(
     return count
 
 
+def _encode_with_imageio(
+    frames: list,
+    output_path: str,
+    fps: int,
+    cam_id: str,
+) -> bool:
+    try:
+        import imageio
+        import cv2
+        
+        # Determine dimensions from first frame
+        first_img = None
+        for f in frames:
+            img = cv2.imread(f)
+            if img is not None:
+                first_img = img
+                break
+        if first_img is None:
+            logger.error("No valid images found – cannot create video")
+            return False
+
+        # OpenCV reads BGR, imageio expects RGB
+        writer = imageio.get_writer(
+            output_path, 
+            fps=fps, 
+            codec="libx264", 
+            pixelformat="yuv420p"
+        )
+        
+        count = 0
+        for idx, f in enumerate(frames):
+            img = cv2.imread(f)
+            if img is None:
+                continue
+            stamped = _stamp_frame(img, cam_id, idx)
+            # Convert BGR to RGB
+            rgb_frame = cv2.cvtColor(stamped, cv2.COLOR_BGR2RGB)
+            writer.append_data(rgb_frame)
+            count += 1
+            
+        writer.close()
+        logger.info(f"imageio H.264 encoding succeeded ({count} frames)")
+        return count > 0
+    except Exception as e:
+        logger.warning(f"imageio encoding failed: {e}")
+        return False
+
 
 def frames_to_video(
     frames_dir: str,
@@ -119,6 +166,11 @@ def frames_to_video(
     if shutil.which("ffmpeg"):
         frame_pattern = os.path.join(frames_dir, "*.jpg")
         success = _encode_with_ffmpeg(frame_pattern, output_path, fps, crf)
+
+    if not success:
+        success = _encode_with_imageio(frames, output_path, fps, cam_id)
+        if success:
+            count = len(frames)
 
     if not success:
         count = _encode_with_opencv(frames, output_path, fps, cam_id, codec)

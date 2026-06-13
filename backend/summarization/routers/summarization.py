@@ -118,3 +118,40 @@ async def get_summary_video_url(summary_id: str, db: AsyncSession = Depends(get_
         return {"url": url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@summarization_router.get("/video/{summary_id}/stream")
+async def stream_summary_video(summary_id: str, db: AsyncSession = Depends(get_db)):
+    """Streams the summary video from MinIO directly through FastAPI."""
+    from fastapi.responses import StreamingResponse
+    stmt = select(VideoSummary).filter(VideoSummary.id == summary_id)
+    result = await db.execute(stmt)
+    summary = result.scalars().first()
+    if not summary:
+        raise HTTPException(status_code=404, detail="Summary not found")
+    if summary.status != "completed" or not summary.summary_storage_path:
+        raise HTTPException(status_code=400, detail="Summary not ready")
+    try:
+        minio = _get_minio()
+        response = minio.get_object("camera-summaries", summary.summary_storage_path)
+        
+        def iter_file():
+            try:
+                for chunk in response.stream(32 * 1024):
+                    yield chunk
+            finally:
+                response.close()
+                response.release_conn()
+                
+        return StreamingResponse(
+            iter_file(),
+            media_type="video/mp4",
+            headers={
+                "Content-Disposition": f"inline; filename={summary_id}_summary.mp4",
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "no-cache",
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
