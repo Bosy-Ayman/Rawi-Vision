@@ -17,6 +17,7 @@ import DashboardMain from './pages/DashboardMain';
 
 import CameraOnboarding from './pages/CameraOnboarding';
 import AllCameras from './pages/AllCameras';
+import Summarization from './pages/Summarization';
 
 import { SubscriptionProvider } from './context/SubscriptionContext';
 import SubscriptionGuard from './components/dashboard/SubscriptionGuard';
@@ -40,6 +41,7 @@ function App() {
             <Route path="/dashboard/smart-search" element={<SubscriptionGuard><SmartSearch /></SubscriptionGuard>} />
             <Route path="/dashboard/anomalies" element={<SubscriptionGuard><Anomalies /></SubscriptionGuard>} />
             <Route path="/dashboard/clips" element={<SubscriptionGuard><Clips /></SubscriptionGuard>} />
+            <Route path="/dashboard/summarization" element={<SubscriptionGuard><Summarization /></SubscriptionGuard>} />
             <Route path="/dashboard/employee-onboarding" element={<SubscriptionGuard><EmployeeOnboarding /></SubscriptionGuard>} />
             <Route path="/dashboard/all-employees" element={<SubscriptionGuard><AllEmployees /></SubscriptionGuard>} />
             <Route path="/dashboard/employee-insights" element={<SubscriptionGuard><EmployeeInsights /></SubscriptionGuard>} />

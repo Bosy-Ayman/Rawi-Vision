@@ -17,6 +17,7 @@ from attendance.routers.attendance import attendance_router
 from subscription.routers.subscription import subscription_router
 from subscription.models.license import LicenseInfo
 from search.routers.search import search_router
+from summarization.routers.summarization import summarization_router
 
 from database import get_db
 from minio import Minio
@@ -241,3 +242,4 @@ app.include_router(stream_router)
 app.include_router(attendance_router)
 app.include_router(subscription_router)
 app.include_router(search_router)
+app.include_router(summarization_router)
