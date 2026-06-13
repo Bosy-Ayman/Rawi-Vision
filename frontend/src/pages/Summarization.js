@@ -8,21 +8,21 @@ import './Summarization.css';
 const STAGE_LABELS = {
   downloading:       'Downloading video…',
   loading_model:     'Loading AI model…',
-  scanning_frames:   'Scanning frames for motion…',
-  detecting_objects: 'Running object detection…',
-  uploading:         'Uploading summary…',
-  completed:         'Done!',
+  scanning_frames:   'Scanning frames…',
+  detecting_objects: 'Detecting objects…',
+  uploading:         'Uploading…',
+  completed:         'Complete',
   failed:            'Failed',
-  pending:           'Queued…',
+  pending:           'Queued',
 };
 
 const Summarization = () => {
-  const [videos, setVideos]           = useState([]);
-  const [summaries, setSummaries]     = useState({});
-  const [progress, setProgress]       = useState({}); // { [summary_id]: { percent, stage } }
+  const [videos, setVideos]             = useState([]);
+  const [summaries, setSummaries]       = useState({}); // { video_id → best summary }
+  const [progress, setProgress]         = useState({}); // { summary_id → { percent, stage } }
   const [autoSummarize, setAutoSummarize] = useState(false);
-  const [loading, setLoading]         = useState(true);
-  const [activeVideo, setActiveVideo] = useState(null); // { url, title }
+  const [loading, setLoading]           = useState(true);
+  const [activeVideo, setActiveVideo]   = useState(null); // { url, title }
   const [notification, setNotification] = useState(null);
   const pollTimers = useRef({});
 
@@ -31,38 +31,42 @@ const Summarization = () => {
     setTimeout(() => setNotification(null), 5000);
   };
 
-  /* ---------- presigned URL fetcher (kept for fallback) ---------- */
-  const fetchVideoUrl = useCallback(async (summaryId) => {
-    try {
-      const data = await summarizationApi.getVideoUrl(summaryId);
-      return data?.url || null;
-    } catch (_) { return null; }
-  }, []);
-
   /* ---------- polling ---------- */
   const startPolling = useCallback((summaryId) => {
-    if (pollTimers.current[summaryId]) return;           // already polling
+    if (pollTimers.current[summaryId]) return;
     pollTimers.current[summaryId] = setInterval(async () => {
       try {
         const data = await summarizationApi.getProgress(summaryId);
         setProgress(prev => ({ ...prev, [summaryId]: data }));
-
         if (data.stage === 'completed' || data.stage === 'failed') {
           clearInterval(pollTimers.current[summaryId]);
           delete pollTimers.current[summaryId];
-          // Refresh summaries list so status badge + Play button appear
           const sumsList = await summarizationApi.listSummaries();
-          const sumsMap = {};
-          (sumsList || []).forEach(s => { sumsMap[s.video_id] = s; });
-          setSummaries(sumsMap);
+          setSummaries(buildSummaryMap(sumsList));
         }
       } catch (_) { /* swallow */ }
     }, 2000);
-  }, [fetchVideoUrl]);
+  }, []);
 
   const stopAllPolling = () => {
     Object.values(pollTimers.current).forEach(clearInterval);
     pollTimers.current = {};
+  };
+
+  /* Pick the best summary per video:
+     prefer completed > processing/pending > failed (most recent wins within tier) */
+  const buildSummaryMap = (list) => {
+    const tierOf = s => s.status === 'completed' ? 0 : (s.status === 'failed' ? 2 : 1);
+    const map = {};
+    (list || []).forEach(s => {
+      const existing = map[s.video_id];
+      if (!existing) { map[s.video_id] = s; return; }
+      const t = tierOf(s), te = tierOf(existing);
+      if (t < te || (t === te && s.date_created > existing.date_created)) {
+        map[s.video_id] = s;
+      }
+    });
+    return map;
   };
 
   /* ---------- initial data ---------- */
@@ -76,68 +80,54 @@ const Summarization = () => {
       ]);
       setAutoSummarize(settings.auto_summarize);
       setVideos(vids || []);
-
-      const sumsMap = {};
-      (sumsList || []).forEach(s => { sumsMap[s.video_id] = s; });
-      setSummaries(sumsMap);
-
-      // Auto-start polling for any in-progress tasks
-      (sumsList || []).filter(s => s.status === 'processing' || s.status === 'pending')
-                      .forEach(s => startPolling(s.id));
-    } catch (error) {
-      showToast('error', 'Error', 'Failed to load summarization data');
-      console.error(error);
+      setSummaries(buildSummaryMap(sumsList));
+      (sumsList || [])
+        .filter(s => s.status === 'processing' || s.status === 'pending')
+        .forEach(s => startPolling(s.id));
+    } catch (err) {
+      showToast('error', 'Error', 'Failed to load data');
+      console.error(err);
     } finally {
       setLoading(false);
     }
   }, [startPolling]);
 
-  useEffect(() => {
-    fetchData();
-    return stopAllPolling;  // cleanup on unmount
-  }, [fetchData]);
+  useEffect(() => { fetchData(); return stopAllPolling; }, [fetchData]);
 
   /* ---------- handlers ---------- */
   const handleToggleAuto = async () => {
-    const newValue = !autoSummarize;
-    setAutoSummarize(newValue);
+    const next = !autoSummarize;
+    setAutoSummarize(next);
     try {
-      await summarizationApi.updateAutoSettings(newValue);
-      showToast('success', 'Settings Updated', `Auto-Summarize turned ${newValue ? 'ON' : 'OFF'}`);
+      await summarizationApi.updateAutoSettings(next);
+      showToast('success', 'Updated', `Auto-Summarize ${next ? 'ON' : 'OFF'}`);
     } catch {
-      setAutoSummarize(!newValue);
+      setAutoSummarize(!next);
       showToast('error', 'Error', 'Failed to update setting');
     }
   };
 
   const handleGenerate = async (video) => {
     try {
-      showToast('info', 'Generating', 'Triggering summarization…');
+      showToast('info', 'Starting…', 'Queuing summarization task');
       const newSummary = await summarizationApi.generateSummary(
         video.video_id, video.camera_id, video.storage_path
       );
       setSummaries(prev => ({ ...prev, [video.video_id]: newSummary }));
       setProgress(prev => ({ ...prev, [newSummary.id]: { percent: 0, stage: 'pending' } }));
       startPolling(newSummary.id);
-      showToast('success', 'Started', 'Summarization task started!');
-    } catch (error) {
-      showToast('error', 'Error', error?.detail || 'Failed to trigger summarization');
+      showToast('success', 'Started', 'Summarization task queued!');
+    } catch (err) {
+      showToast('error', 'Error', err?.detail || 'Failed to start summarization');
     }
   };
 
-  const getStatusClass = (status) => {
-    switch (status) {
-      case 'completed':  return 'status-completed';
-      case 'failed':     return 'status-failed';
-      case 'processing': return 'status-processing';
-      default:           return 'status-pending';
-    }
-  };
+  const statusClass = s => ({ completed: 'status-completed', failed: 'status-failed', processing: 'status-processing' }[s] || 'status-pending');
 
   /* ---------- render ---------- */
   return (
     <DashboardLayout title="Video Summarization">
-      <div className="summarization-container">
+      <div className="sum-page">
 
         {notification && (
           <ToastNotification
@@ -148,144 +138,175 @@ const Summarization = () => {
           />
         )}
 
-        {/* Header */}
-        <div className="summarization-header">
-          <p style={{ margin: 0, color: '#64748b', fontSize: '1rem' }}>
-            Condense hours of footage into minutes using AI.&nbsp;
-            Summaries are stored in MinIO under the <code>camera-summaries</code> bucket.
-          </p>
-          <div className="auto-toggle">
-            <span>Auto-Summarize New Videos</span>
-            <label className="switch">
+        {/* ── Header ─────────────────────────────── */}
+        <div className="sum-header">
+          <div className="sum-header-left">
+            <h1 className="sum-title">
+              <span className="sum-title-icon">🎬</span>
+              Video Summarization
+            </h1>
+            <p className="sum-subtitle">
+              AI condenses hours of footage into concise highlight reels
+            </p>
+          </div>
+          <div className="sum-auto-toggle">
+            <div className="toggle-label-group">
+              <span className="toggle-title">Auto-Summarize</span>
+              <span className="toggle-sub">New recordings</span>
+            </div>
+            <label className="toggle-pill">
               <input
                 type="checkbox"
                 checked={autoSummarize}
                 onChange={handleToggleAuto}
                 disabled={loading}
               />
-              <span className="slider round"></span>
+              <span className="toggle-track">
+                <span className="toggle-thumb" />
+              </span>
             </label>
           </div>
         </div>
 
-        {/* Grid */}
+        {/* ── Grid ───────────────────────────────── */}
         {loading ? (
-          <div style={{ textAlign: 'center', padding: '50px', color: '#64748b' }}>Loading…</div>
+          <div className="sum-loading">
+            <div className="sum-spinner" />
+            <p>Loading videos…</p>
+          </div>
+        ) : videos.length === 0 ? (
+          <div className="sum-empty">
+            <div className="sum-empty-icon">📹</div>
+            <h3>No archived videos</h3>
+            <p>Record a video stream first — it will appear here for summarization.</p>
+          </div>
         ) : (
-          <div className="video-grid">
+          <div className="sum-grid">
             {videos.map(video => {
-              const summary = summaries[video.video_id];
-              const prog    = summary ? progress[summary.id] : null;
-              const pct     = prog?.percent ?? 0;
-              const stage   = prog?.stage   ?? summary?.status ?? 'pending';
-              const isProcessing = summary && (summary.status === 'processing' || summary.status === 'pending');
-              // Direct public URL — camera-summaries bucket has public-read policy
-              const videoUrl = (summary?.status === 'completed' && summary?.summary_storage_path)
-                ? `http://localhost:9000/camera-summaries/${summary.summary_storage_path}`
+              const summary     = summaries[video.video_id];
+              const prog        = summary ? progress[summary.id] : null;
+              const pct         = prog?.percent ?? 0;
+              const stage       = prog?.stage ?? summary?.status ?? 'none';
+              const isActive    = summary && (summary.status === 'processing' || summary.status === 'pending');
+              const isCompleted = summary?.status === 'completed' && summary?.summary_storage_path;
+              const minioHost   = window.location.hostname || 'localhost';
+              const videoUrl    = isCompleted
+                ? `http://${minioHost}:9000/camera-summaries/${summary.summary_storage_path}`
                 : null;
 
               return (
-                <div key={video.video_id} className="video-card">
-                  {/* Card header */}
-                  <div className="card-header-row">
-                    <h3 className="card-title">{video.filename}</h3>
-                    {summary && (
-                      <span className={`status-badge ${getStatusClass(summary.status)}`}>
-                        {summary.status.toUpperCase()}
-                      </span>
+                <div key={video.video_id} className={`sum-card ${isCompleted ? 'sum-card--done' : ''}`}>
+
+                  {/* Status chip */}
+                  {summary && (
+                    <span className={`sum-chip ${statusClass(summary.status)}`}>
+                      {summary.status === 'completed' ? '✓ Done'
+                        : summary.status === 'processing' ? '⚙ Processing'
+                        : summary.status === 'pending'    ? '⏳ Queued'
+                        : '✕ Failed'}
+                    </span>
+                  )}
+
+                  {/* Inline video OR placeholder */}
+                  <div className="sum-card-media">
+                    {videoUrl ? (
+                      <video
+                        key={videoUrl}
+                        src={videoUrl}
+                        className="sum-video"
+                        controls
+                        preload="metadata"
+                      />
+                    ) : (
+                      <div className="sum-media-placeholder">
+                        {isActive ? (
+                          <>
+                            <div className="sum-spinner-sm" />
+                            <span>Processing…</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="placeholder-icon">🎞</span>
+                            <span>No summary yet</span>
+                          </>
+                        )}
+                      </div>
                     )}
                   </div>
 
-                  {/* Meta */}
-                  <p className="card-meta">
-                    📷 Camera: <span>{video.camera_room || video.camera_id}</span>
-                  </p>
-                  <p className="card-meta storage-path">
-                    🗂 Source: <code>{video.storage_path}</code>
-                  </p>
-                  {summary?.summary_storage_path && (
-                    <p className="card-meta storage-path">
-                      ✅ Summary: <code>camera-summaries/{summary.summary_storage_path}</code>
-                    </p>
-                  )}
-
                   {/* Progress bar */}
-                  {isProcessing && (
-                    <div className="progress-wrapper">
-                      <div className="progress-label">
-                        <span>{STAGE_LABELS[stage] || stage}</span>
-                        <span className="progress-pct">{pct}%</span>
+                  {isActive && (
+                    <div className="sum-progress">
+                      <div className="sum-progress-info">
+                        <span className="sum-progress-stage">{STAGE_LABELS[stage] || stage}</span>
+                        <span className="sum-progress-pct">{pct}%</span>
                       </div>
-                      <div className="progress-track">
-                        <div
-                          className="progress-fill"
-                          style={{ width: `${pct}%` }}
-                        />
+                      <div className="sum-progress-track">
+                        <div className="sum-progress-fill" style={{ width: `${pct}%` }} />
                       </div>
                     </div>
                   )}
 
-                  {/* Inline video player */}
-                  {videoUrl && (
-                    <div className="inline-player">
-                      <video
-                        src={videoUrl}
-                        controls
-                        className="summary-player-inline"
-                        title={`Summary of ${video.filename}`}
-                      />
-                      <p className="player-caption">🎬 AI Summary Video</p>
-                    </div>
-                  )}
+                  {/* Info */}
+                  <div className="sum-card-info">
+                    <p className="sum-card-name" title={video.filename}>{video.filename}</p>
+                    <p className="sum-card-meta">
+                      <span className="meta-icon">📷</span>
+                      {video.camera_room || 'Camera'} · {video.camera_number || ''}
+                    </p>
+                    {isCompleted && (
+                      <p className="sum-card-path">
+                        <span className="meta-icon">🗂</span>
+                        <code>camera-summaries/{summary.summary_storage_path}</code>
+                      </p>
+                    )}
+                  </div>
 
-                  {/* Action button */}
-                  <div className="card-actions">
+                  {/* Actions */}
+                  <div className="sum-card-actions">
                     {!summary || summary.status === 'failed' ? (
-                      <button className="btn-generate" onClick={() => handleGenerate(video)}>
-                        ⚙️ Generate Summary
+                      <button className="sum-btn sum-btn--primary" onClick={() => handleGenerate(video)}>
+                        <span>⚙</span> Generate Summary
                       </button>
-                    ) : summary.status === 'completed' ? (
+                    ) : isCompleted ? (
                       <button
-                        className="btn-play"
+                        className="sum-btn sum-btn--watch"
                         onClick={() => setActiveVideo({ url: videoUrl, title: video.filename })}
                       >
-                        ⛶ Full-screen
+                        <span>⛶</span> Full Screen
                       </button>
                     ) : (
-                      <button className="btn-generate" disabled>
-                        ⏳ {STAGE_LABELS[stage] || 'Processing…'}
+                      <button className="sum-btn sum-btn--disabled" disabled>
+                        <span>⏳</span> {STAGE_LABELS[stage] || 'Working…'}
                       </button>
                     )}
                   </div>
                 </div>
               );
             })}
-
-            {videos.length === 0 && (
-              <div className="empty-state">
-                <h3>📹</h3>
-                <h4>No archived videos found</h4>
-                <p>Record a video first to use the summarization feature.</p>
-              </div>
-            )}
           </div>
         )}
 
-        {/* Full-screen modal */}
+        {/* ── Full-screen modal ──────────────────── */}
         {activeVideo && (
-          <div className="video-modal-overlay" onClick={() => setActiveVideo(null)}>
-            <div className="video-modal" onClick={e => e.stopPropagation()}>
-              <div className="modal-header">
-                <h3>🎬 {activeVideo.title}</h3>
-                <button className="close-modal" onClick={() => setActiveVideo(null)}>&times;</button>
+          <div className="sum-modal-backdrop" onClick={() => setActiveVideo(null)}>
+            <div className="sum-modal" onClick={e => e.stopPropagation()}>
+              <div className="sum-modal-header">
+                <div className="sum-modal-title">
+                  <span>🎬</span>
+                  <span>{activeVideo.title}</span>
+                </div>
+                <button className="sum-modal-close" onClick={() => setActiveVideo(null)}>✕</button>
               </div>
-              <video
-                src={activeVideo.url}
-                className="summary-player"
-                controls
-                autoPlay
-              />
-              <p className="modal-caption">
+              <div className="sum-modal-body">
+                <video
+                  src={activeVideo.url}
+                  className="sum-modal-video"
+                  controls
+                  autoPlay
+                />
+              </div>
+              <p className="sum-modal-footer">
                 Stored in MinIO → <code>camera-summaries</code>
               </p>
             </div>
