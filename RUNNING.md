@@ -31,13 +31,13 @@ Open a **new terminal**, navigate to the backend folder, and run:
 ```powershell
 cd C:\Users\pouss\Documents\CSAI\Rawi-Vision\backend
 $env:DOCKER_HOST="npipe:////./pipe/dockerDesktopLinuxEngine"
-venv\Scripts\uvicorn.exe main:app --host 127.0.0.1 --port 8001
+venv\Scripts\uvicorn.exe main:app --host 127.0.0.1 --port 8002
 ```
 
 ✅ Ready when you see:
 ```
 INFO:     Application startup complete.
-INFO:     Uvicorn running on http://127.0.0.1:8001
+INFO:     Uvicorn running on http://127.0.0.1:8002
 ```
 
 ---
@@ -91,7 +91,7 @@ Go to: **http://localhost:3000**
 **Terminal 1 — Backend:**
 ```powershell
 cd C:\Users\pouss\Documents\CSAI\Rawi-Vision\backend
-$env:DOCKER_HOST="npipe:////./pipe/dockerDesktopLinuxEngine"; venv\Scripts\uvicorn.exe main:app --host 127.0.0.1 --port 8001
+$env:DOCKER_HOST="npipe:////./pipe/dockerDesktopLinuxEngine"; venv\Scripts\uvicorn.exe main:app --host 127.0.0.1 --port 8002
 ```
 
 **Terminal 2 — Celery Worker:**
