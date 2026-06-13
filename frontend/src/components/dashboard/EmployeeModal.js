@@ -10,60 +10,85 @@ const EmployeeModal = ({ employee, allAttendanceData, onClose }) => {
 
         // Filter all records for this employee (handle both employee object and attendance record object)
         const targetEmployeeId = employee.employee_id || employee.id;
-        const empRecords = allAttendanceData.filter(r => r.employee_id === targetEmployeeId);
+        const targetDay = employee.day;
+        const recordsArray = Array.isArray(allAttendanceData) ? allAttendanceData : (allAttendanceData.records || []);
         
-        // Group employee records by day and camera to calculate non-overlapping intervals
-        const intervals = {}; // day -> [{start, end, camId}]
+        // Filter by employee, and optionally by day if the clicked item is a daily record
+        const empRecords = recordsArray.filter(r => {
+            const matchEmp = r.employee_id === targetEmployeeId;
+            const matchDay = targetDay ? r.day === targetDay : true;
+            return matchEmp && matchDay;
+        });
+        
+        // Group employee records by day and camera
         const cameraCounts = {};
-
-        empRecords.forEach(record => {
-            if (!record.day || !record.date_created) return;
-            
+        let totalVisits = empRecords.length;
+        const dailyDurations = {};
+        
+        // Track intervals to avoid double counting overlapping sessions for total duration
+        const intervals = empRecords.map(record => {
             const start = new Date(record.date_created).getTime();
             const durationSec = record.duration_seconds || 0;
-            let end = record.last_seen ? new Date(record.last_seen).getTime() : start;
-            if (end <= start && durationSec > 0) {
-                end = start + (durationSec * 1000);
+            let end = start + (durationSec * 1000);
+            if (record.last_seen) {
+                const lastSeenTime = new Date(record.last_seen).getTime();
+                if (lastSeenTime > end) end = lastSeenTime;
             }
+            return { start, end, record };
+        }).sort((a, b) => a.start - b.start);
 
+
+        empRecords.forEach(record => {
             const camId = record.camera_id || "Unknown";
             cameraCounts[camId] = (cameraCounts[camId] || 0) + 1;
-
-            if (!intervals[record.day]) {
-                intervals[record.day] = [];
-            }
-            intervals[record.day].push({ start, end });
         });
 
-        let totalDurationSeconds = 0;
-        let totalVisits = 0;
-        const dailyDurations = {};
+        // Calculate duration per day for dailyDurations (Shift Duration)
+        const intervalsByDay = {};
+        intervals.forEach(iv => {
+            const day = iv.record.day;
+            if (day) {
+                if (!intervalsByDay[day]) intervalsByDay[day] = [];
+                intervalsByDay[day].push(iv);
+            }
+        });
 
-        // Merge daily intervals
-        Object.entries(intervals).forEach(([dayStr, list]) => {
-            const sorted = list.sort((a, b) => a.start - b.start);
-            const merged = [];
-            let current = { start: sorted[0].start, end: sorted[0].end };
-
-            for (let i = 1; i < sorted.length; i++) {
-                const item = sorted[i];
-                if (item.start <= current.end) {
-                    current.end = Math.max(current.end, item.end);
-                } else {
-                    merged.push(current);
-                    current = { start: item.start, end: item.end };
+        let totalElapsedSeconds = 0;
+        Object.keys(intervalsByDay).forEach(day => {
+            const dayIntervals = intervalsByDay[day];
+            let dayTotalSec = 0;
+            if (dayIntervals.length > 0) {
+                const mergedTotal = [];
+                let currentTotal = { start: dayIntervals[0].start, end: dayIntervals[0].end };
+                const gracePeriodMs = 20 * 60 * 1000;
+                
+                for (let i = 1; i < dayIntervals.length; i++) {
+                    const item = dayIntervals[i];
+                    if (item.start <= currentTotal.end) {
+                        currentTotal.end = Math.max(currentTotal.end, item.end);
+                    } else if (item.start - currentTotal.end <= gracePeriodMs) {
+                        currentTotal.end = Math.max(currentTotal.end, item.end);
+                    } else {
+                        currentTotal.end += gracePeriodMs;
+                        mergedTotal.push(currentTotal);
+                        currentTotal = { start: item.start, end: item.end };
+                    }
                 }
+                mergedTotal.push(currentTotal);
+                
+                const totalActiveMs = mergedTotal.reduce((sum, interval) => sum + (interval.end - interval.start), 0);
+                dayTotalSec = totalActiveMs / 1000;
+
+                const firstMs = Math.min(...dayIntervals.map(iv => iv.start));
+                const lastMs = Math.max(...dayIntervals.map(iv => iv.end));
+                totalElapsedSeconds += (lastMs - firstMs) / 1000;
             }
-            merged.push(current);
-
-            const dayDurationMs = merged.reduce((sum, interval) => sum + (interval.end - interval.start), 0);
-            const dayDurationSec = dayDurationMs / 1000;
-
-            dailyDurations[dayStr] = dayDurationSec;
-            totalDurationSeconds += dayDurationSec;
-            // The actual number of distinct non-overlapping attendance sessions on this day
-            totalVisits += merged.length;
+            dailyDurations[day] = dayTotalSec;
         });
+
+        // If filtering by day, sum up the day durations. Or just sum all days
+        let totalDurationSeconds = Object.values(dailyDurations).reduce((sum, val) => sum + val, 0);
+        let totalExcludedGapSeconds = Math.max(0, totalElapsedSeconds - totalDurationSeconds);
 
         // 2. Favorite Camera
         let favoriteCamera = "None";
@@ -87,7 +112,12 @@ const EmployeeModal = ({ employee, allAttendanceData, onClose }) => {
             // Find all out of bounds alerts for this specific employee
             const empIdStr = String(targetEmployeeId);
             const matchingAlerts = allAttendanceData.alerts 
-                ? allAttendanceData.alerts.filter(a => String(a.employee_id) === empIdStr && a.anomaly_type === 'out_of_bounds')
+                ? allAttendanceData.alerts.filter(a => {
+                    const matchEmp = String(a.employee_id) === empIdStr;
+                    const matchType = a.anomaly_type === 'out_of_bounds';
+                    const matchDay = targetDay ? (a.day === targetDay || (a.detected_at && a.detected_at.startsWith(targetDay))) : true;
+                    return matchEmp && matchType && matchDay;
+                })
                 : [];
             
             awayAlertsCount = matchingAlerts.length;
@@ -114,7 +144,7 @@ const EmployeeModal = ({ employee, allAttendanceData, onClose }) => {
             }
 
             // Days they actually came in:
-            const daysCheckedIn = Object.keys(intervals).length;
+            const daysCheckedIn = Object.keys(dailyDurations).length;
 
             if (totalDurationSeconds > 0 && daysCheckedIn > 0) {
                 // Adherence = (Time Present / Expected Shift Time for only checked in days) minus away time penalty
@@ -159,6 +189,7 @@ const EmployeeModal = ({ employee, allAttendanceData, onClose }) => {
                 avgSession: formatDuration(avgSessionSeconds),
                 awayAlertsCount,
                 totalMinutesAway: `${Math.round(totalMinutesAway)}m`,
+                excludedGapTime: formatDuration(totalExcludedGapSeconds),
                 shiftAdherence
             },
             chartData,
@@ -221,7 +252,7 @@ const EmployeeModal = ({ employee, allAttendanceData, onClose }) => {
                                 <h3 style={{ margin: '0 0 4px 0', fontSize: '15px', color: '#f8fafc', fontWeight: '600' }}>
                                     Assigned Room Performance
                                 </h3>
-                                <div className="modal-stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+                                <div className="modal-stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
                                     <div className="modal-stat-card" style={{ border: '1px solid rgba(16, 185, 129, 0.2)', background: 'rgba(16, 185, 129, 0.02)' }}>
                                         <span className="modal-stat-label" style={{ color: '#10b981' }}>Shift Adherence</span>
                                         <span className="modal-stat-value" style={{ color: '#10b981' }}>{stats.shiftAdherence}</span>
@@ -231,8 +262,12 @@ const EmployeeModal = ({ employee, allAttendanceData, onClose }) => {
                                         <span className="modal-stat-value" style={{ color: '#ef4444' }}>{stats.awayAlertsCount}</span>
                                     </div>
                                     <div className="modal-stat-card" style={{ border: '1px solid rgba(245, 158, 11, 0.2)', background: 'rgba(245, 158, 11, 0.02)' }}>
-                                        <span className="modal-stat-label" style={{ color: '#f59e0b' }}>Total Time Away</span>
+                                        <span className="modal-stat-label" style={{ color: '#f59e0b' }}>Alerts Duration</span>
                                         <span className="modal-stat-value" style={{ color: '#f59e0b' }}>{stats.totalMinutesAway}</span>
+                                    </div>
+                                    <div className="modal-stat-card" style={{ border: '1px solid rgba(99, 102, 241, 0.2)', background: 'rgba(99, 102, 241, 0.02)' }}>
+                                        <span className="modal-stat-label" style={{ color: '#6366f1' }}>Excluded Break Time</span>
+                                        <span className="modal-stat-value" style={{ color: '#6366f1' }}>{stats.excludedGapTime}</span>
                                     </div>
                                 </div>
                             </div>
@@ -263,7 +298,7 @@ const EmployeeModal = ({ employee, allAttendanceData, onClose }) => {
                         {/* Right Column: Activity Log */}
                         <div className="modal-right-col">
                             <div className="modal-activity-section">
-                                <h3>Recent Activity Log</h3>
+                                <h3>Recent Activity (Latest {recentActivity.length} of {stats.totalVisits})</h3>
                                 <div className="activity-list">
                                     {recentActivity.map((activity, idx) => (
                                         <div key={idx} className="activity-item">

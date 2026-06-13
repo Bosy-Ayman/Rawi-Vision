@@ -568,7 +568,8 @@ body:has(.insight-card:hover) .custom-cursor {
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: rgba(0, 0, 0, 0.5);
+    background-color: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -577,14 +578,20 @@ body:has(.insight-card:hover) .custom-cursor {
 }
 
 .modal-content {
-    background-color: white;
-    border-radius: 16px;
+    background: var(--bg-surface);
+    border-radius: var(--radius-xl);
     padding: 2.5rem;
     width: 90%;
     max-width: 450px;
     position: relative;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+    box-shadow: var(--shadow-xl);
     animation: slideUp 0.3s ease;
+}
+
+/* Modifier for large modals */
+.modal-lg {
+    max-width: 850px;
+    padding: 2rem;
 }
 
 .modal-close {
@@ -594,10 +601,15 @@ body:has(.insight-card:hover) .custom-cursor {
     background: none;
     border: none;
     font-size: 1.5rem;
-    color: #6b7280;
+    color: var(--text-muted);
     cursor: pointer;
     padding: 0;
     line-height: 1;
+    transition: var(--transition-fast);
+}
+
+.modal-close:hover {
+    color: var(--text-main);
 }
 
 .modal-title {

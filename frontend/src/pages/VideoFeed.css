@@ -8,11 +8,11 @@
 
 .camera-card {
     position: relative;
-    background-color: #ffffff;
-    border-radius: 12px;
+    background-color: var(--bg-surface);
+    border-radius: var(--radius-lg);
     overflow: hidden;
     border: 1px solid #e1e8ed;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+    box-shadow: var(--shadow-sm);
     display: flex;
     flex-direction: column;
     width: 100%;
@@ -35,19 +35,19 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0.25rem 0.75rem;
-    border-radius: 20px;
+    border-radius: var(--radius-xl);
     background: rgba(0, 0, 0, 0.6);
-    color: white;
+    color: var(--bg-surface);
     font-size: 0.75rem;
     font-weight: 600;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    box-shadow: var(--shadow-sm);
     z-index: 10;
 }
 
 .camera-badge--live .badge-dot {
     width: 8px;
     height: 8px;
-    background-color: #ef4444; /* Red pulse for LIVE */
+    background-color: var(--danger); /* Red pulse for LIVE */
     border-radius: 50%;
     animation: pulseLive 1.5s infinite;
 }
@@ -55,7 +55,7 @@
 .camera-badge--reconnecting .badge-dot {
     width: 8px;
     height: 8px;
-    background-color: #f59e0b; /* Orange for reconnecting */
+    background-color: var(--warning); /* Orange for reconnecting */
     border-radius: 50%;
     animation: pulseLive 2s infinite;
 }
@@ -63,18 +63,18 @@
 .camera-badge--error .badge-dot {
     width: 8px;
     height: 8px;
-    background-color: #9ca3af; /* Grey for offline */
+    background-color: var(--text-light); /* Grey for offline */
     border-radius: 50%;
 }
 
 .camera-badge--recording {
-    background-color: #ef4444 !important;
+    background-color: var(--danger) !important;
     box-shadow: 0 2px 8px rgba(239, 68, 68, 0.4);
     animation: blinkRecording 1.5s infinite ease-in-out;
 }
 
 .camera-badge--recording .badge-dot {
-    background-color: #ffffff !important;
+    background-color: var(--bg-surface) !important;
     animation: pulseRecordingDot 1.2s infinite ease-in-out;
 }
 
@@ -92,7 +92,7 @@
 
 @keyframes pulseLive {
     0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
-    70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+    70% {  }
     100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
 }
 
@@ -117,22 +117,22 @@
 }
 
 .camera-error-text {
-    color: white;
+    color: var(--bg-surface);
     font-weight: 600;
     margin-bottom: 1rem;
 }
 
 .camera-retry-btn {
     padding: 0.5rem 1rem;
-    background: #ef4444;
-    color: white;
+    background: var(--danger);
+    color: var(--bg-surface);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     font-weight: 500;
 }
 
 .camera-retry-btn:hover {
-    background: #dc2626;
+    background: var(--danger-hover);
 }
 
 .camera-info-bar {
@@ -145,7 +145,7 @@
     display: flex;
     justify-content: space-between;
     align-items: flex-end;
-    color: white;
+    color: var(--bg-surface);
     z-index: 10;
 }
 
@@ -175,7 +175,7 @@
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    color: white;
+    color: var(--bg-surface);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -191,9 +191,9 @@
     width: 100%;
     padding: 4rem;
     text-align: center;
-    background: white;
-    border-radius: 12px;
-    color: #6b7280;
+    background: var(--bg-surface);
+    border-radius: var(--radius-lg);
+    color: var(--text-muted);
     border: 1px dashed #d1d5db;
 }
 
@@ -205,8 +205,8 @@
     align-items: center;
     justify-content: center;
     text-align: center;
-    background: white;
-    border-radius: 12px;
+    background: var(--bg-surface);
+    border-radius: var(--radius-lg);
 }
 
 .access-denied-icon {
@@ -215,12 +215,12 @@
 }
 
 .access-denied-screen h2 {
-    color: #111827;
+    color: var(--text-main);
     margin-bottom: 0.5rem;
 }
 
 .access-denied-screen p {
-    color: #6b7280;
+    color: var(--text-muted);
 }
 
 /* ==================== HOG VISION SPLIT LAYOUT ==================== */
@@ -249,7 +249,7 @@
 /* Main active camera inherits 16:9 aspect-ratio and scales with its parent's width */
 .hog-vision-main .camera-card {
     border: 2px solid #3498db;
-    box-shadow: 0 8px 30px rgba(52, 152, 219, 0.15);
+    box-shadow: var(--shadow-lg);
 }
 
 
@@ -268,11 +268,11 @@
 }
 .hog-vision-sidebar::-webkit-scrollbar-track {
     background: #f1f1f1;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
 }
 .hog-vision-sidebar::-webkit-scrollbar-thumb {
     background: #bdc3c7;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
 }
 .hog-vision-sidebar::-webkit-scrollbar-thumb:hover {
     background: #95a5a6;
@@ -294,13 +294,13 @@
 }
 
 .hog-sidebar-card {
-    background-color: #ffffff;
+    background-color: var(--bg-surface);
     border: 1px solid #e1e8ed;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     padding: 1rem;
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    box-shadow: var(--shadow-sm);
 }
 
 .hog-sidebar-card:hover {

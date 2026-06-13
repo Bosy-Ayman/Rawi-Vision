@@ -71,9 +71,12 @@ const DashboardMain = () => {
             const start = new Date(record.date_created).getTime();
             // Fall back to date_created + duration_seconds if last_seen is missing/null/equal to date_created
             const durationSec = record.duration_seconds || 0;
-            let end = record.last_seen ? new Date(record.last_seen).getTime() : start;
-            if (end <= start && durationSec > 0) {
-                end = start + (durationSec * 1000);
+            let end = start + (durationSec * 1000);
+            if (record.last_seen) {
+                const lastSeenTime = new Date(record.last_seen).getTime();
+                if (lastSeenTime > end) {
+                    end = lastSeenTime;
+                }
             }
             
             const camId = record.camera_id || "Unknown";
@@ -100,34 +103,44 @@ const DashboardMain = () => {
             if (list.length === 0) return;
             const sorted = list.sort((a, b) => a.start - b.start);
             
-            // Merge intervals for total daily duration
+            // Merge intervals with a 20-minute (1200000 ms) grace period
             const mergedTotal = [];
             let currentTotal = { start: sorted[0].start, end: sorted[0].end };
+            const gracePeriodMs = 20 * 60 * 1000;
             
             for (let i = 1; i < sorted.length; i++) {
                 const item = sorted[i];
                 if (item.start <= currentTotal.end) {
                     currentTotal.end = Math.max(currentTotal.end, item.end);
+                } else if (item.start - currentTotal.end <= gracePeriodMs) {
+                    // Gap is within tolerance, bridge the gap completely
+                    currentTotal.end = Math.max(currentTotal.end, item.end);
                 } else {
+                    // Gap exceeds tolerance, add exactly maxToleranceMs to the current interval
+                    currentTotal.end += gracePeriodMs;
                     mergedTotal.push(currentTotal);
                     currentTotal = { start: item.start, end: item.end };
                 }
             }
             mergedTotal.push(currentTotal);
             
-            const totalDurationMs = mergedTotal.reduce((sum, interval) => sum + (interval.end - interval.start), 0);
-            const totalDurationSec = totalDurationMs / 1000;
+            const totalActiveMs = mergedTotal.reduce((sum, interval) => sum + (interval.end - interval.start), 0);
+            const totalDurationSec = totalActiveMs / 1000;
             
             // Build the grouped record for main table
             const baseRecord = sorted[0].record;
             const dayStr = baseRecord.day;
             
+            const firstSeenMs = Math.min(...sorted.map(s => s.start));
+            const lastSeenMs = Math.max(...sorted.map(s => s.end));
+            
             grouped[key] = {
                 ...baseRecord,
                 look_count: sorted.length, // total visits/sessions
-                first_seen: new Date(Math.min(...sorted.map(s => s.start))).toISOString(),
-                last_seen: new Date(Math.max(...sorted.map(s => s.end))).toISOString(),
-                total_duration_seconds: totalDurationSec
+                first_seen: new Date(firstSeenMs).toISOString(),
+                last_seen: new Date(lastSeenMs).toISOString(),
+                total_duration_seconds: totalDurationSec,
+                active_duration_seconds: totalDurationSec
             };
 
             // Aggregate day-wise unique people & duration

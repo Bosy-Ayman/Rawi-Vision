@@ -5,7 +5,7 @@
     max-width: 1280px;
     margin: 0 auto;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    color: #1e293b;
+    color: var(--text-main);
 }
 
 /* Stats Dashboard Row */
@@ -17,35 +17,35 @@
 }
 
 .stat-glass-card {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 16px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-xl);
     padding: 24px;
     display: flex;
     align-items: center;
     gap: 20px;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    box-shadow: var(--shadow-md);
     transition: transform 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .stat-glass-card:hover {
     transform: translateY(-4px);
     border-color: #cbd5e1;
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08);
+    box-shadow: var(--shadow-lg);
 }
 
 .stat-icon-wrapper {
     width: 54px;
     height: 54px;
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
 .stat-icon-wrapper.blue {
-    background: rgba(59, 130, 246, 0.1);
-    color: #2563eb;
+    background: var(--primary-light);
+    color: var(--primary-hover);
 }
 
 .stat-icon-wrapper.green {
@@ -67,7 +67,7 @@
     margin: 0 0 4px 0;
     font-size: 13px;
     font-weight: 600;
-    color: #64748b;
+    color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
 }
@@ -76,12 +76,12 @@
     margin: 0 0 2px 0;
     font-size: 28px;
     font-weight: 700;
-    color: #0f172a;
+    color: var(--text-main);
 }
 
 .stat-subtext {
     font-size: 12px;
-    color: #64748b;
+    color: var(--text-muted);
 }
 
 /* Filter and Search Bar */
@@ -91,12 +91,12 @@
     justify-content: space-between;
     align-items: center;
     gap: 20px;
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
     padding: 18px 24px;
-    border-radius: 16px;
+    border-radius: var(--radius-xl);
     margin-bottom: 32px;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    box-shadow: var(--shadow-md);
 }
 
 .search-wrapper {
@@ -113,26 +113,26 @@
     transform: translateY(-50%);
     width: 20px;
     height: 20px;
-    color: #64748b;
+    color: var(--text-muted);
     pointer-events: none;
 }
 
 .search-wrapper input {
     width: 100%;
     padding: 12px 16px 12px 46px;
-    background: #f8fafc;
+    background: var(--bg-main);
     border: 1px solid #cbd5e1;
-    border-radius: 12px;
-    color: #0f172a;
+    border-radius: var(--radius-lg);
+    color: var(--text-main);
     font-size: 14px;
     outline: none;
     transition: all 0.2s ease;
 }
 
 .search-wrapper input:focus {
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
-    background: #ffffff;
+    border-color: var(--primary);
+    box-shadow: var(--shadow-focus);
+    background: var(--bg-surface);
 }
 
 .select-wrapper {
@@ -143,16 +143,16 @@
 
 .select-wrapper label {
     font-size: 14px;
-    color: #64748b;
+    color: var(--text-muted);
     font-weight: 500;
 }
 
 .select-wrapper select {
     padding: 12px 20px;
-    background: #f8fafc;
+    background: var(--bg-main);
     border: 1px solid #cbd5e1;
-    border-radius: 12px;
-    color: #0f172a;
+    border-radius: var(--radius-lg);
+    color: var(--text-main);
     font-size: 14px;
     outline: none;
     cursor: pointer;
@@ -160,8 +160,8 @@
 }
 
 .select-wrapper select:focus {
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    border-color: var(--primary);
+    box-shadow: var(--shadow-focus);
 }
 
 /* Employees Grid */
@@ -172,9 +172,9 @@
 }
 
 .insight-employee-card {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 20px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-xl);
     padding: 24px;
     position: relative;
     overflow: hidden;
@@ -184,13 +184,13 @@
     align-items: center;
     text-align: center;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    box-shadow: var(--shadow-md);
 }
 
 .insight-employee-card:hover {
     transform: translateY(-6px);
-    border-color: #3b82f6;
-    box-shadow: 0 12px 20px -5px rgba(59, 130, 246, 0.15);
+    border-color: var(--primary);
+    box-shadow: 0 12px 20px -5px var(--primary-light);
 }
 
 .card-avatar-section {
@@ -202,7 +202,7 @@
     margin: 0 0 6px 0;
     font-size: 18px;
     font-weight: 600;
-    color: #0f172a;
+    color: var(--text-main);
 }
 
 .card-role-badge {
@@ -210,7 +210,7 @@
     padding: 4px 12px;
     background: #eff6ff;
     color: #1d4ed8;
-    border-radius: 9999px;
+    border-radius: var(--radius-full);
     font-size: 12px;
     font-weight: 500;
     margin-bottom: 12px;
@@ -220,7 +220,7 @@
 .card-meta {
     margin: 0;
     font-size: 12px;
-    color: #64748b;
+    color: var(--text-muted);
 }
 
 .card-action-overlay {
@@ -230,7 +230,7 @@
     right: 0;
     background: linear-gradient(0deg, rgba(37, 99, 235, 0.95) 0%, rgba(59, 130, 246, 0.9) 100%);
     padding: 12px;
-    color: #ffffff;
+    color: var(--bg-surface);
     font-size: 13px;
     font-weight: 600;
     transform: translateY(100%);
@@ -248,15 +248,15 @@
     align-items: center;
     justify-content: center;
     padding: 80px 24px;
-    color: #64748b;
+    color: var(--text-muted);
 }
 
 .spinner {
     width: 40px;
     height: 40px;
-    border: 3px solid #e2e8f0;
+    border: 3px solid var(--border-color);
     border-radius: 50%;
-    border-top-color: #3b82f6;
+    border-top-color: var(--primary);
     animation: spin 1s ease-in-out infinite;
     margin-bottom: 16px;
 }
@@ -272,23 +272,23 @@
     align-items: center;
     justify-content: center;
     padding: 64px 24px;
-    background: #f8fafc;
+    background: var(--bg-main);
     border: 1px dashed #cbd5e1;
-    border-radius: 20px;
+    border-radius: var(--radius-xl);
     text-align: center;
-    color: #64748b;
+    color: var(--text-muted);
 }
 
 .insights-empty-state svg {
     width: 48px;
     height: 48px;
-    color: #94a3b8;
+    color: var(--text-light);
     margin-bottom: 16px;
 }
 
 .insights-empty-state h3 {
     margin: 0 0 6px 0;
-    color: #0f172a;
+    color: var(--text-main);
     font-size: 18px;
 }
 

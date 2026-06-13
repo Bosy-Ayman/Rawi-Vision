@@ -13,7 +13,7 @@
 
 .header-title {
     font-size: 1.8rem;
-    color: #111827;
+    color: var(--text-main);
     flex: 1;
 }
 
@@ -38,31 +38,31 @@
     width: 100%;
     padding: 0.75rem 1rem;
     border: 1px solid #e5e7eb;
-    border-radius: 9999px;
+    border-radius: var(--radius-full);
     background-color: #f9fafb;
     outline: none;
     transition: all 0.2s;
 }
 
 .search-bar input:focus {
-    border-color: #3b82f6;
-    background-color: white;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: var(--primary);
+    background-color: var(--bg-surface);
+    box-shadow: var(--shadow-focus);
 }
 
 .btn-add-new {
-    background-color: #3b82f6;
-    color: white;
+    background-color: var(--primary);
+    color: var(--bg-surface);
     border: none;
     padding: 0.75rem 1.5rem;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     font-weight: 600;
     cursor: pointer;
     transition: background-color 0.2s;
 }
 
 .btn-add-new:hover {
-    background-color: #2563eb;
+    background-color: var(--primary-hover);
 }
 
 .camera-grid {
@@ -72,8 +72,8 @@
 }
 
 .camera-card {
-    background: white;
-    border-radius: 16px;
+    background: var(--bg-surface);
+    border-radius: var(--radius-xl);
     padding: 2rem 1.5rem;
     border: 1px solid #e5e7eb;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -87,8 +87,8 @@
 
 .camera-card:hover {
     transform: translateY(-8px);
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-    border-color: #3b82f6;
+    box-shadow: var(--shadow-xl);
+    border-color: var(--primary);
 }
 
 .card-image {
@@ -99,20 +99,20 @@
     width: 90px;
     height: 90px;
     background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-    color: #3b82f6;
+    color: var(--primary);
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 2rem;
     font-weight: 700;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-md);
 }
 
 .card-info h3 {
     margin: 0 0 0.5rem 0;
     font-size: 1.25rem;
-    color: #111827;
+    color: var(--text-main);
     font-weight: 600;
 }
 
@@ -121,7 +121,7 @@
     background-color: #ebf5ff;
     color: #1e40af;
     padding: 0.35rem 1rem;
-    border-radius: 9999px;
+    border-radius: var(--radius-full);
     font-size: 0.8rem;
     font-weight: 500;
     margin-bottom: 0.75rem;
@@ -129,7 +129,7 @@
 
 .mac-address {
     font-size: 0.85rem;
-    color: #6b7280;
+    color: var(--text-muted);
     margin: 0.5rem 0;
     font-family: monospace;
 }
@@ -137,10 +137,10 @@
 .btn-delete-camera {
     margin-top: 1rem;
     background-color: #fee2e2;
-    color: #ef4444;
+    color: var(--danger);
     border: none;
     padding: 0.5rem 1rem;
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     font-weight: 500;
     cursor: pointer;
     transition: background-color 0.2s;
@@ -160,7 +160,7 @@
 .empty-state {
     text-align: center;
     padding: 3rem;
-    color: #6b7280;
-    background: white;
-    border-radius: 12px;
+    color: var(--text-muted);
+    background: var(--bg-surface);
+    border-radius: var(--radius-lg);
 }
