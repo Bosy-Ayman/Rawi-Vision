@@ -4,12 +4,12 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from camera_manager import CameraManager
-from frame_processor import save_frame
-from video_generator import frames_to_video
-from object_detection import load_model, detect_and_filter
-from utils import ensure_dir, setup_logging, compute_frame_skip, write_run_report
-from motion_filter import MotionFilter
+from ai.Summarization_Pipeline.camera_manager import CameraManager
+from ai.Summarization_Pipeline.frame_processor import save_frame
+from ai.Summarization_Pipeline.video_generator import frames_to_video
+from ai.Summarization_Pipeline.object_detection import load_model, detect_and_filter
+from ai.Summarization_Pipeline.utils import ensure_dir, setup_logging, compute_frame_skip, write_run_report
+from ai.Summarization_Pipeline.motion_filter import MotionFilter
 
 logger = logging.getLogger(__name__)
 
