@@ -245,18 +245,26 @@ class FrameEncoder:
             print(f"[WARN] OCR text extraction failed: {e}")
             return []
 
-    def track_subjects(self, frame_bgr: np.ndarray) -> List[int]:
+    def track_subjects(self, frame_bgr: np.ndarray) -> List[dict]:
         try:
             # Persistent multi-object tracking via YOLOv8 built-in ByteTrack/BoT-SORT
             results = self.yolo_model.track(frame_bgr, persist=True, conf=0.5, verbose=False)
-            track_ids = []
+            tracked_people = []
             for r in results:
                 if r.boxes is not None and r.boxes.id is not None:
-                    for cls_id, track_id in zip(r.boxes.cls, r.boxes.id):
+                    for box, cls_id, track_id in zip(r.boxes.xyxy, r.boxes.cls, r.boxes.id):
                         if int(cls_id) == 0:  # 0 is the COCO person class
-                            track_ids.append(int(track_id))
-            return sorted(list(set(track_ids)))
-        except Exception:
+                            x1, y1, x2, y2 = map(int, box)
+                            # FIX: Skip small crops like in realtime fusion
+                            if (x2 - x1) < 40 or (y2 - y1) < 80:
+                                continue
+                            tracked_people.append({
+                                "track_id": int(track_id),
+                                "x1": x1, "y1": y1, "x2": x2, "y2": y2
+                            })
+            return tracked_people
+        except Exception as e:
+            print(f"[WARN] track_subjects error: {e}")
             return []
 
     def motion_vector(self, frame_bgr: np.ndarray,
@@ -336,7 +344,8 @@ class FrameEncoder:
     def encode_frame(self, frame_bgr: np.ndarray,
                      prev_frame_bgr: Optional[np.ndarray] = None) -> Tuple[np.ndarray, str, List[int], List[dict]]:
         # Tracks
-        track_ids = self.track_subjects(frame_bgr)
+        tracked_people = self.track_subjects(frame_bgr)
+        track_ids = sorted(list(set(p["track_id"] for p in tracked_people)))
 
         # Objects
         objects = self.detect_objects(frame_bgr)
@@ -363,34 +372,59 @@ class FrameEncoder:
         # 4. Run Face Recognition — collect one detection dict per face found
         face_detections = []  # List of {"emp_id": ..., "name": ..., "confidence": ...}
         if self.face_recognition_enabled:
-            try:
-                face_results = self.yolo_face(frame_bgr, verbose=False, conf=0.3)
-                for r in face_results:
-                    for box in r.boxes:
-                        x1, y1, x2, y2 = map(int, box.xyxy[0])
-                        h, w = frame_bgr.shape[:2]
-                        x1, y1 = max(0, x1), max(0, y1)
-                        x2, y2 = min(w, x2), min(h, y2)
-                        face_crop = frame_bgr[y1:y2, x1:x2]
-                        if face_crop.size > 0:
-                            face_crop_rgb = cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
-                            face_resized = cv2.resize(face_crop_rgb, (160, 160))
-                            face_norm = face_resized.astype(np.float32) / 255.0
-                            face_norm = (face_norm - 0.5) / 0.5
-                            face_tensor = torch.tensor(np.transpose(face_norm, (2, 0, 1))).unsqueeze(0).to("cpu")
-                            with torch.no_grad():
-                                emb = self.resnet(face_tensor).cpu().numpy().squeeze()
-                            # search_face returns (name, emp_id, dist)
-                            name, emp_id, dist = self.face_manager.search_face(emb)
-                            if dist < 1.0 and name != "Unknown":
-                                # Store each individual detection with its emp_id and confidence
-                                face_detections.append({
-                                    "emp_id": str(emp_id),
-                                    "name": name,
-                                    "confidence": float(1.0 - dist)  # invert distance -> confidence
-                                })
-            except Exception as face_err:
-                print(f"[WARN] Face Recognition failed during frame encoding: {face_err}")
+            for person in tracked_people:
+                try:
+                    px1, py1, px2, py2 = person["x1"], person["y1"], person["x2"], person["y2"]
+                    h, w = frame_bgr.shape[:2]
+                    px1, py1 = max(0, px1), max(0, py1)
+                    px2, py2 = min(w, px2), min(h, py2)
+                    
+                    person_crop = frame_bgr[py1:py2, px1:px2]
+                    if person_crop.size == 0:
+                        continue
+                        
+                    face_results = self.yolo_face(person_crop, verbose=False, conf=0.3)
+                    
+                    best_name = "Unknown"
+                    best_emp_id = None
+                    best_conf = 0.0
+                    
+                    if len(face_results) > 0 and len(face_results[0].boxes) > 0:
+                        for box in face_results[0].boxes:
+                            fx1, fy1, fx2, fy2 = map(int, box.xyxy[0])
+                            face_crop = person_crop[fy1:fy2, fx1:fx2]
+                            if face_crop.size > 0:
+                                face_crop_rgb = cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
+                                face_resized = cv2.resize(face_crop_rgb, (160, 160))
+                                face_norm = face_resized.astype(np.float32) / 255.0
+                                face_norm = (face_norm - 0.5) / 0.5
+                                face_tensor = torch.tensor(np.transpose(face_norm, (2, 0, 1))).unsqueeze(0).to("cpu")
+                                face_tensor = face_tensor.to(next(self.resnet.parameters()).dtype)
+                                with torch.no_grad():
+                                    emb = self.resnet(face_tensor).cpu().numpy().squeeze()
+                                
+                                name, emp_id, dist = self.face_manager.search_face(emb)
+                                conf = float(1.0 - dist)
+                                
+                                # Use threshold 1.0 same as realtime pipeline
+                                if dist < 1.0 and name != "Unknown":
+                                    best_name = name
+                                    best_emp_id = str(emp_id)
+                                    best_conf = conf
+                                    break
+                                    
+                    face_detections.append({
+                        "emp_id": best_emp_id if best_emp_id else None,
+                        "name": best_name,
+                        "confidence": best_conf,
+                        "x1": px1,
+                        "y1": py1,
+                        "x2": px2,
+                        "y2": py2,
+                        "is_unknown": best_name == "Unknown"
+                    })
+                except Exception as face_err:
+                    print(f"[WARN] Face Recognition failed for a person crop: {face_err}")
 
         # Build summary for embedding + description
         names_str = "none"

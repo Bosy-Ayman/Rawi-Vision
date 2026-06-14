@@ -309,12 +309,20 @@ const Summarization = () => {
                     )}
                   </div>
 
-                  {/* Actions */}
                   <div className="sum-card-actions">
                     {!summary || summary.status === 'failed' ? (
-                      <button className="sum-btn sum-btn--primary" onClick={() => handleGenerate(video)}>
-                        <span>⚙</span> Generate Summary
-                      </button>
+                      <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                        <button className="sum-btn sum-btn--primary" style={{ flex: 1 }} onClick={() => handleGenerate(video)}>
+                          <span>⚙</span> Generate
+                        </button>
+                        <button
+                          className="sum-btn sum-btn--watch"
+                          style={{ flex: 1 }}
+                          onClick={() => setActiveVideo({ url: `${BASE_URL}/api/search/video/${video.video_id}/stream`, title: video.filename })}
+                        >
+                          <span>▶</span> Play Original
+                        </button>
+                      </div>
                     ) : isCompleted ? (
                       <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
                         <button
@@ -334,9 +342,18 @@ const Summarization = () => {
                         </button>
                       </div>
                     ) : (
-                      <button className="sum-btn sum-btn--disabled" disabled>
-                        <span>⏳</span> {STAGE_LABELS[stage] || 'Working…'}
-                      </button>
+                      <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                        <button className="sum-btn sum-btn--disabled" style={{ flex: 1 }} disabled>
+                          <span>⏳</span> {STAGE_LABELS[stage] || 'Working…'}
+                        </button>
+                        <button
+                          className="sum-btn sum-btn--watch"
+                          style={{ flex: 1 }}
+                          onClick={() => setActiveVideo({ url: `${BASE_URL}/api/search/video/${video.video_id}/stream`, title: video.filename })}
+                        >
+                          <span>▶</span> Play Original
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>

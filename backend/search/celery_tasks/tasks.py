@@ -121,7 +121,7 @@ def update_video_status(video_id: str, status: str):
 
 
 def insert_frame(video_id: str, frame_number: int, timestamp_offset: float,
-                 description: str, tracks: str, embedding: list):
+                 description: str, tracks: str, embedding: list, face_detections_json: str = None):
     """Inserts a single video frame row into video_frames table."""
     conn = get_sync_db_conn()
     try:
@@ -129,10 +129,10 @@ def insert_frame(video_id: str, frame_number: int, timestamp_offset: float,
             cur.execute(
                 """
                 INSERT INTO video_frames
-                    (video_id, frame_number, timestamp_offset, description, tracks, embedding)
-                VALUES (%s, %s, %s, %s, %s, %s::vector)
+                    (video_id, frame_number, timestamp_offset, description, tracks, embedding, face_detections)
+                VALUES (%s, %s, %s, %s, %s, %s::vector, %s)
                 """,
-                (video_id, frame_number, timestamp_offset, description, tracks, json.dumps(embedding))
+                (video_id, frame_number, timestamp_offset, description, tracks, json.dumps(embedding), face_detections_json)
             )
         conn.commit()
     finally:
@@ -194,15 +194,16 @@ _GLOBAL_ENCODER = None
 
 
 @celery_app.task(bind=True, name="search.tasks.index_video_task", max_retries=1)
-def index_video_task(self, video_id: str, storage_path: str, sampling_rate: int = 16):
+def index_video_task(self, video_id: str, storage_path: str, sampling_rate: int = 16, enable_face_recognition: bool = True):
     """
     Downloads video from MinIO, extracts frame embeddings using FrameEncoder,
-    and stores them in PostgreSQL.
+    and stores them in PostgreSQL. Optionally inserts face detection data.
     """
     import cv2
     import sys
 
     print(f"[TASK] Starting video indexing for video_id={video_id}")
+    print(f"[TASK] Face recognition: {'ENABLED' if enable_face_recognition else 'DISABLED'}")
     update_video_status(video_id, "indexing")
 
     redis_client = get_redis_client()
@@ -302,6 +303,7 @@ def index_video_task(self, video_id: str, storage_path: str, sampling_rate: int 
             try:
                 embedding, full_desc, track_ids, face_detections = encoder.encode_frame(frame, prev_frame)
                 tracks_str = ",".join(map(str, track_ids))
+                face_detections_json = json.dumps(face_detections) if face_detections else None
 
                 insert_frame(
                     video_id=video_id,
@@ -309,21 +311,23 @@ def index_video_task(self, video_id: str, storage_path: str, sampling_rate: int 
                     timestamp_offset=timestamp,
                     description=full_desc,
                     tracks=tracks_str,
-                    embedding=embedding.tolist()
+                    embedding=embedding.tolist(),
+                    face_detections_json=face_detections_json
                 )
 
                 # Persist every face detection as a separate video_appearances row
-                for det in face_detections:
-                    try:
-                        insert_video_appearance(
-                            video_id=video_id,
-                            employee_id=det["emp_id"],
-                            frame_number=indexed_frame,
-                            timestamp_offset=timestamp,
-                            confidence=det["confidence"]
-                        )
-                    except Exception as app_err:
-                        print(f"[WARN] video_appearance insert failed: {app_err}")
+                if enable_face_recognition:
+                    for det in face_detections:
+                        try:
+                            insert_video_appearance(
+                                video_id=video_id,
+                                employee_id=det["emp_id"],
+                                frame_number=indexed_frame,
+                                timestamp_offset=timestamp,
+                                confidence=det["confidence"]
+                            )
+                        except Exception as app_err:
+                            print(f"[WARN] video_appearance insert failed: {app_err}")
 
                 if sampled_count % 5 == 0 or indexed_frame >= total_frames:
                     try:
@@ -391,9 +395,10 @@ def index_video_task(self, video_id: str, storage_path: str, sampling_rate: int 
 
 @celery_app.task(bind=True, name="search.tasks.extract_clip_task")
 def extract_clip_task(self, video_id: str, storage_path: str, frame_number: int,
-                      timestamp_offset: float, clip_duration: float = 6.0):
+                      timestamp_offset: float, clip_duration: float = 6.0, draw_bboxes: bool = True):
     """
     Cuts a short clip centred on timestamp_offset and uploads it to MinIO.
+    Optionally draws face bounding boxes on frames.
     """
     import cv2
 
@@ -416,6 +421,25 @@ def extract_clip_task(self, video_id: str, storage_path: str, frame_number: int,
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
+        # Get frame data for bbox drawing if enabled
+        frame_bbox_map = {}
+        if draw_bboxes:
+            try:
+                conn = get_sync_db_conn()
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT frame_number, face_detections FROM video_frames WHERE video_id = %s",
+                        (video_id,)
+                    )
+                    for row in cur.fetchall():
+                        frame_num = row[0]
+                        face_detections_json = row[1]
+                        if face_detections_json:
+                            frame_bbox_map[frame_num] = json.loads(face_detections_json)
+                conn.close()
+            except Exception as e:
+                print(f"[WARN] Failed to fetch bbox data: {e}")
+
         half_dur = clip_duration / 2.0
         start_time = max(0.0, timestamp_offset - half_dur)
         end_time = min(total_frames / fps, timestamp_offset + half_dur)
@@ -436,11 +460,40 @@ def extract_clip_task(self, video_id: str, storage_path: str, frame_number: int,
 
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         current_frame = start_frame
+        scale_x = target_width / width if width > 0 else 1
+        scale_y = target_height / height if height > 0 else 1
+
+        past_frames = [f for f in frame_bbox_map.keys() if f <= start_frame]
+        last_drawn_bboxes = frame_bbox_map[max(past_frames)] if past_frames else []
+
         while current_frame <= end_frame:
             ret, frame = cap.read()
             if not ret:
                 break
+
             resized_frame = cv2.resize(frame, (target_width, target_height))
+
+            # Draw bounding boxes if available for this frame
+            if draw_bboxes:
+                if current_frame in frame_bbox_map:
+                    last_drawn_bboxes = frame_bbox_map[current_frame]
+                    
+                for det in last_drawn_bboxes:
+                    try:
+                        x1, y1, x2, y2 = int(det["x1"] * scale_x), int(det["y1"] * scale_y), int(det["x2"] * scale_x), int(det["y2"] * scale_y)
+                        name = det.get("name", "Unknown")
+                        conf = det.get("confidence", 0)
+                        is_unknown = det.get("is_unknown", False)
+
+                        # Red for unknown, green for identified
+                        color = (0, 0, 255) if is_unknown else (0, 255, 0)
+
+                        cv2.rectangle(resized_frame, (x1, y1), (x2, y2), color, 2)
+                        label = f"{name} ({conf:.2f})"
+                        cv2.putText(resized_frame, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+                    except Exception as bbox_err:
+                        print(f"[WARN] Failed to draw bbox: {bbox_err}")
+
             out_writer.write(resized_frame)
             current_frame += 1
 

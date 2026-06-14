@@ -8,7 +8,8 @@ const Clips = () => {
     const [videos, setVideos] = useState([]);
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
-    
+    const [enableFaceRecognition, setEnableFaceRecognition] = useState(true);
+
     // Timeline modal state
     const [selectedVideo, setSelectedVideo] = useState(null);
     const [frames, setFrames] = useState([]);
@@ -16,7 +17,7 @@ const Clips = () => {
     const [currentTime, setCurrentTime] = useState(0);
     const [searchTermTimeline, setSearchTermTimeline] = useState('');
     const [selectedPersonTimeline, setSelectedPersonTimeline] = useState('All');
-    
+    const [videoDimensions, setVideoDimensions] = useState({ intrinsicWidth: 0, intrinsicHeight: 0, renderWidth: 0, renderHeight: 0 });
     const [activeRecordings, setActiveRecordings] = useState([]);
     const [ticker, setTicker] = useState(0);
     
@@ -95,6 +96,7 @@ const Clips = () => {
         formData.append('file', file);
         formData.append('camera_id', '00000000-0000-0000-0000-000000000000'); // Default test camera
         formData.append('sampling_rate', 16);
+        formData.append('enable_face_recognition', enableFaceRecognition);
 
         setUploading(true);
         try {
@@ -135,6 +137,7 @@ const Clips = () => {
     };
 
     const handleSeekToFrame = (timestamp) => {
+        console.log("[DEBUG] handleSeekToFrame called with timestamp:", timestamp);
         if (videoRef.current) {
             videoRef.current.currentTime = timestamp;
             videoRef.current.play().catch(() => {});
@@ -259,11 +262,33 @@ const Clips = () => {
                         <h2>Clips Library</h2>
                         <p>Manage recorded and uploaded video clips for AI indexing and security analysis.</p>
                     </div>
-                    <div className="upload-btn-wrapper">
-                        <button className="upload-btn" disabled={uploading}>
-                            {uploading ? 'Uploading...' : '📤 Upload Video (.mp4)'}
-                        </button>
-                        <input type="file" accept="video/mp4,video/x-m4v,video/*" onChange={handleUpload} />
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '8px 12px',
+                            backgroundColor: '#f1f5f9',
+                            borderRadius: '6px',
+                            border: '1px solid #e2e8f0'
+                        }}>
+                            <input
+                                type="checkbox"
+                                id="faceRecognitionToggle"
+                                checked={enableFaceRecognition}
+                                onChange={(e) => setEnableFaceRecognition(e.target.checked)}
+                                style={{ cursor: 'pointer' }}
+                            />
+                            <label htmlFor="faceRecognitionToggle" style={{ cursor: 'pointer', fontSize: '0.9rem', margin: 0 }}>
+                                👤 Face Recognition
+                            </label>
+                        </div>
+                        <div className="upload-btn-wrapper">
+                            <button className="upload-btn" disabled={uploading}>
+                                {uploading ? 'Uploading...' : '📤 Upload Video (.mp4)'}
+                            </button>
+                            <input type="file" accept="video/mp4,video/x-m4v,video/*" onChange={handleUpload} />
+                        </div>
                     </div>
                 </div>
 
@@ -516,15 +541,70 @@ const Clips = () => {
                             <button className="close-modal-btn" onClick={handleCloseTimeline}>&times;</button>
                         </div>
                         <div className="timeline-modal-body">
-                            <div className="timeline-video-container">
-                                <video 
+                            <div className="timeline-video-container" style={{ position: 'relative' }}>
+                                <video
                                     ref={videoRef}
                                     src={`${BASE_URL}/api/search/video/${selectedVideo.video_id}/stream`}
                                     controls
                                     className="timeline-main-video"
                                     autoPlay
-                                    onTimeUpdate={(e) => setCurrentTime(e.target.currentTime)}
+                                    onTimeUpdate={(e) => {
+                                        setCurrentTime(e.target.currentTime);
+                                        if (e.target.videoWidth) {
+                                            setVideoDimensions({
+                                                intrinsicWidth: e.target.videoWidth,
+                                                intrinsicHeight: e.target.videoHeight,
+                                                renderWidth: e.target.offsetWidth,
+                                                renderHeight: e.target.offsetHeight
+                                            });
+                                        }
+                                    }}
                                 />
+                                {(() => {
+                                    if (!videoDimensions.intrinsicWidth || frames.length === 0) return null;
+                                    // Find closest frame before currentTime
+                                    const currentFrame = frames.slice().reverse().find(f => f.timestamp_offset <= currentTime) || frames[0];
+                                    if (!currentFrame || !currentFrame.face_detections) return null;
+
+                                    const scaleX = videoDimensions.renderWidth / videoDimensions.intrinsicWidth;
+                                    const scaleY = videoDimensions.renderHeight / videoDimensions.intrinsicHeight;
+
+                                    return currentFrame.face_detections.map((det, i) => {
+                                        const left = det.x1 * scaleX;
+                                        const top = det.y1 * scaleY;
+                                        const width = (det.x2 - det.x1) * scaleX;
+                                        const height = (det.y2 - det.y1) * scaleY;
+                                        const color = det.is_unknown ? '#ef4444' : '#22c55e'; // red vs green
+
+                                        return (
+                                            <div key={i} style={{
+                                                position: 'absolute',
+                                                left: `${left}px`,
+                                                top: `${top}px`,
+                                                width: `${width}px`,
+                                                height: `${height}px`,
+                                                border: `2px solid ${color}`,
+                                                pointerEvents: 'none',
+                                                boxSizing: 'border-box'
+                                            }}>
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    top: '-24px',
+                                                    left: '-2px',
+                                                    backgroundColor: color,
+                                                    color: '#fff',
+                                                    padding: '2px 6px',
+                                                    fontSize: '12px',
+                                                    fontWeight: 'bold',
+                                                    whiteSpace: 'nowrap',
+                                                    borderRadius: '4px 4px 0 0'
+                                                }}>
+                                                    {det.name} ({det.confidence ? det.confidence.toFixed(2) : '0.00'})
+                                                </div>
+                                            </div>
+                                        );
+                                    });
+                                })()}
                             </div>
                             <div className="timeline-sidebar">
                                 <div className="sidebar-header-wrapper">

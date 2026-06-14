@@ -28,3 +28,4 @@ class VideoFrame(Base):
     description: Mapped[str] = mapped_column(nullable=False)                          # Fused description string
     tracks: Mapped[str | None] = mapped_column(nullable=True)                         # Comma-separated track IDs
     embedding: Mapped[list[float]] = mapped_column(Vector(1152), nullable=False)      # 1152-dim pgvector column
+    face_detections: Mapped[str | None] = mapped_column(nullable=True)               # JSON: [{"emp_id", "name", "confidence", "x1", "y1", "x2", "y2"}]

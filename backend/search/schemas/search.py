@@ -62,5 +62,6 @@ class VideoFrameResponse(BaseModel):
     timestamp_offset: float
     description: str
     identities: List[str] = []
+    face_detections: List[Dict[str, Any]] = []
 
 

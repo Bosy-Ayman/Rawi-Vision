@@ -70,6 +70,7 @@ async def upload_video(
     file: UploadFile = File(...),
     camera_id: uuid.UUID = Form(...),
     sampling_rate: int = Form(16),
+    enable_face_recognition: bool = Form(True),
     minio: Minio = Depends(get_minio)
 ):
     """
@@ -112,7 +113,7 @@ async def upload_video(
     await db.commit()
 
     # Dispatch Celery background indexing task
-    task = index_video_task.delay(str(video_id), storage_path, sampling_rate)
+    task = index_video_task.delay(str(video_id), storage_path, sampling_rate, enable_face_recognition)
     try:
         redis_client = get_redis_client()
         redis_client.set(f"indexing:task_id:{video_id}", task.id)
@@ -253,7 +254,8 @@ async def query_search(
                     storage_path=video.storage_path,
                     frame_number=match["frame_id"],
                     timestamp_offset=match["timestamp"],
-                    clip_duration=6.0
+                    clip_duration=6.0,
+                    draw_bboxes=True
                 )
 
             logger.warning(">>> [query_search] Returning response")
@@ -682,14 +684,112 @@ async def get_video_frames(video_id: uuid.UUID, db: db_dependency):
             if "[Real-time Identity" not in f.description:
                 enriched_description = f"{f.description} [Real-time Identity: {', '.join(frame_identities)}]"
         
+        import json
+        face_dets = []
+        if f.face_detections:
+            try:
+                face_dets = json.loads(f.face_detections)
+            except Exception:
+                pass
+
         response_list.append(
             VideoFrameResponse(
                 frame_number=f.frame_number,
                 timestamp_offset=f.timestamp_offset,
                 description=enriched_description,
-                identities=frame_identities
+                identities=frame_identities,
+                face_detections=face_dets
             )
         )
     return response_list
 
 
+# Endpoint 10: Extract Frame with Bounding Boxes
+@search_router.get("/video/{video_id}/frame-image")
+async def get_frame_image(video_id: uuid.UUID, timestamp: float, db: db_dependency, minio: Minio = Depends(get_minio)):
+    """Extracts a frame and draws bounding boxes."""
+    print(f"\n[ENDPOINT] frame-image called: video_id={video_id}, timestamp={timestamp}")
+    import cv2
+    import tempfile
+    import json as json_lib
+    from fastapi.responses import StreamingResponse
+    import io
+
+    stmt = select(IndexedVideo).filter(IndexedVideo.id == video_id)
+    result = await db.execute(stmt)
+    video = result.scalar_one_or_none()
+
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    try:
+        bucket_name = "camera-archive-videos"
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_file:
+            video_path = tmp_file.name
+
+        minio.fget_object(bucket_name, video.storage_path, video_path)
+
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            raise RuntimeError("Cannot open video")
+
+        fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+        frame_idx = int(timestamp * fps)
+
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+        ret, frame = cap.read()
+        cap.release()
+
+        if not ret:
+            raise RuntimeError("Cannot extract frame")
+
+        # Get bbox data for this frame
+        stmt_frame = select(VideoFrame).filter(
+            VideoFrame.video_id == video_id,
+            VideoFrame.timestamp_offset <= timestamp
+        ).order_by(VideoFrame.timestamp_offset.desc())
+        result_frame = await db.execute(stmt_frame)
+        frame_data = result_frame.scalars().first()
+
+        # Draw bboxes if available
+        if frame_data and frame_data.face_detections:
+            print(f"[DEBUG] Found frame data with face_detections")
+            try:
+                face_dets = json_lib.loads(frame_data.face_detections)
+                print(f"[DEBUG] Drawing {len(face_dets)} bboxes")
+                for det in face_dets:
+                    x1, y1, x2, y2 = int(det["x1"]), int(det["y1"]), int(det["x2"]), int(det["y2"])
+                    name = det.get("name", "Unknown")
+                    conf = det.get("confidence", 0)
+                    is_unknown = det.get("is_unknown", False)
+
+                    color = (0, 0, 255) if is_unknown else (0, 255, 0)
+                    print(f"[DEBUG] Drawing bbox for {name} at ({x1},{y1})-({x2},{y2}), color={color}")
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
+                    label = f"{name} ({conf:.2f})"
+                    cv2.putText(frame, label, (x1, max(0, y1 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+            except Exception as e:
+                print(f"[WARN] Failed to draw bboxes: {e}")
+        else:
+            print(f"[DEBUG] No frame_data or face_detections found")
+
+        # Encode frame to JPEG bytes and return
+        ret, buffer = cv2.imencode('.jpg', frame)
+        if not ret:
+            raise RuntimeError("Failed to encode frame as JPEG")
+
+        image_bytes = buffer.tobytes()
+
+        try:
+            os.unlink(video_path)
+        except:
+            pass
+
+        return StreamingResponse(
+            io.BytesIO(image_bytes),
+            media_type="image/jpeg",
+            headers={"Cache-Control": "no-cache"}
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Frame extraction failed: {str(e)}")

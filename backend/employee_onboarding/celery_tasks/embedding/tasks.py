@@ -19,11 +19,17 @@ _embedder = None
 def get_face_models():
     global _detector, _embedder
     if _embedder is None:
-        print("[INFO] Initializing facenet-pytorch InceptionResnetV1 for embeddings...")
-        from facenet_pytorch import MTCNN, InceptionResnetV1
+        print("[INFO] Initializing YOLOv12m-face and InceptionResnetV1 for embeddings...")
+        from ultralytics import YOLO
+        from facenet_pytorch import InceptionResnetV1
         import torch
+        from pathlib import Path
+        
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        _detector = MTCNN(keep_all=False, device=device)
+        backend_dir = Path(__file__).resolve().parent.parent.parent.parent
+        face_weights = backend_dir / "camera_ingestion" / "ai" / "weights" / "yolov12m-face.pt"
+        
+        _detector = YOLO(str(face_weights)).to(device)
         _embedder = InceptionResnetV1(pretrained="vggface2").eval().to(device)
     return _detector, _embedder
 
@@ -40,17 +46,35 @@ def generate_embedding(images_bytes):
         if image is None:
             print(f"Warning: could not decode image {idx}, skipping.")
             continue
-        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        
-        # MTCNN from facenet-pytorch detects faces and returns cropped & normalized tensors
-        # directly ready for InceptionResnetV1!
-        face_tensor = detector(rgb_image)
-        if face_tensor is None:
+        # Run YOLO face detector
+        results = detector(image, verbose=False, conf=0.3)
+        if not results or len(results[0].boxes) == 0:
             print(f"Warning: no face detected in image {idx}, skipping.")
             continue
+            
+        # Get the first face
+        box = results[0].boxes[0]
+        fx1, fy1, fx2, fy2 = map(int, box.xyxy[0])
+        h, w = image.shape[:2]
+        fx1, fy1 = max(0, fx1), max(0, fy1)
+        fx2, fy2 = min(w, fx2), min(h, fy2)
+        
+        face_crop = image[fy1:fy2, fx1:fx2]
+        if face_crop.size == 0:
+            continue
+            
+        # Resize to 160x160 for InceptionResnetV1
+        face_resized = cv2.resize(face_crop, (160, 160))
+        face_rgb = cv2.cvtColor(face_resized, cv2.COLOR_BGR2RGB)
+        
+        # Normalize
+        face_norm = face_rgb.astype(np.float32) / 255.0
+        face_norm = (face_norm - 0.5) / 0.5
+        face_tensor = torch.tensor(np.transpose(face_norm, (2, 0, 1))).unsqueeze(0).to(device)
+        face_tensor = face_tensor.to(next(embedder.parameters()).dtype)
         
         with torch.no_grad():
-            embedding = embedder(face_tensor.unsqueeze(0).to(device)).cpu().numpy()[0]
+            embedding = embedder(face_tensor).cpu().numpy().squeeze()
             
         embeddings.append(embedding)
         processed += 1
