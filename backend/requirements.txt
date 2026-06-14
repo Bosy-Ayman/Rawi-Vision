@@ -1,0 +1,67 @@
+# Core API & Web Framework
+fastapi==0.135.1
+uvicorn==0.34.0
+pydantic==2.12.5
+pydantic-settings==2.14.1
+python-multipart
+
+# Database & ORM
+sqlalchemy==2.0.40
+alembic==1.18.4
+asyncpg==0.31.0
+
+# Authentication & Security
+python-jose==3.3.0
+passlib==1.7.4
+bcrypt==4.2.1
+cryptography==46.0.4
+
+# Background Tasks
+celery==5.6.3
+kombu==5.4.8
+redis
+
+# Message Queues
+aiokafka==0.13.0
+confluent-kafka==2.14.0
+amqp==5.3.1
+
+# Deep Learning & Computer Vision
+torch==2.5.1
+torchvision==0.20.1
+ultralytics==8.4.48
+opencv-python==4.11.0.86
+facenet-pytorch==2.6.0
+faiss-cpu==1.13.2
+scikit-learn
+numpy
+scipy
+
+# Image & Video Processing
+Pillow
+av==16.1.0
+imageio
+imageio-ffmpeg
+
+# Data Processing
+pandas
+datasets
+evaluate
+transformers
+scikit-image
+
+# File Storage & Cloud
+boto3
+minio==7.2.14
+google-cloud-storage
+
+# API & Utilities
+email-validator
+aiofiles==25.1.0
+httpx
+requests
+python-dotenv==1.0.1
+
+# Testing (Optional)
+pytest
+pytest-asyncio
