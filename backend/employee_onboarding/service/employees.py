@@ -58,7 +58,20 @@ class EmployeeService:
             employee_images = self.employee_image_service.get_employee_images(employee_id=id)
             if not employee_data:
                 raise EmployeeNotFound("No employees found")
-            employee_response = EmployeeResponse(id=employee_data.id, date_created=employee_data.date_created, first_name= employee_data.first_name, last_name= employee_data.last_name, role= employee_data.role, embedding= employee_data.embedding, embedding_status= employee_data.embedding_status, images=employee_images["image_urls"])
+            employee_response = EmployeeResponse(
+                id=employee_data.id, 
+                date_created=employee_data.date_created, 
+                first_name=employee_data.first_name, 
+                last_name=employee_data.last_name, 
+                role=employee_data.role, 
+                embedding=employee_data.embedding, 
+                embedding_status=employee_data.embedding_status, 
+                images=employee_images["image_urls"],
+                assigned_camera_ids=employee_data.assigned_camera_ids,
+                assigned_days=employee_data.assigned_days,
+                assigned_shift_start=employee_data.assigned_shift_start,
+                assigned_shift_end=employee_data.assigned_shift_end
+            )
             return employee_response
         except (SQLAlchemyError) as error:
             raise error  #check if the error need to be more descriptive

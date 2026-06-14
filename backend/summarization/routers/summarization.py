@@ -1,0 +1,257 @@
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from typing import List
+import uuid
+
+import os
+from datetime import timedelta
+from minio import Minio
+
+from database import get_db
+from ..models.summary import VideoSummary
+from ..schemas.summary import VideoSummaryCreate, VideoSummaryResponse, AutoSummarizeSettings
+from utils.celery_client import celery_app
+from camera_ingestion.utils.redis import redis_client
+
+summarization_router = APIRouter(prefix="/api/summarization", tags=["Summarization"])
+
+def _get_minio():
+    url = (
+        os.getenv("MINIO_SERVER_URL", "127.0.0.1:9000")
+        .replace("http://", "")
+        .replace("https://", "")
+    )
+    return Minio(
+        url,
+        access_key=os.getenv("MINIO_ROOT_USER", "minioadmin"),
+        secret_key=os.getenv("MINIO_ROOT_PASSWORD", "minioadmin"),
+        secure=False,
+    )
+
+
+@summarization_router.post("/generate/{video_id}", response_model=VideoSummaryResponse)
+async def generate_summary(video_id: str, camera_id: str, storage_path: str, db: AsyncSession = Depends(get_db)):
+    # Check if a summary already exists
+    stmt = select(VideoSummary).filter(VideoSummary.video_id == video_id)
+    result = await db.execute(stmt)
+    existing_summary = result.scalars().first()
+    
+    if existing_summary and existing_summary.status != "failed":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Summary is already generated or in progress")
+
+    summary_id = str(uuid.uuid4())
+    
+    new_summary = VideoSummary(
+        id=summary_id,
+        video_id=video_id,
+        camera_id=camera_id,
+        status="pending",
+        generation_type="manual"
+    )
+    db.add(new_summary)
+    await db.commit()
+    await db.refresh(new_summary)
+
+    celery_app.send_task(
+        "summarization.tasks.generate_video_summary_task",
+        args=[summary_id, video_id, camera_id, storage_path]
+    )
+
+    return new_summary
+
+@summarization_router.get("/list", response_model=List[VideoSummaryResponse])
+async def list_summaries(db: AsyncSession = Depends(get_db)):
+    stmt = select(VideoSummary).order_by(VideoSummary.date_created.desc())
+    result = await db.execute(stmt)
+    summaries = result.scalars().all()
+    
+    valid_summaries = []
+    minio = _get_minio()
+    
+    for summary in summaries:
+        # Check if the summary is marked as completed and has a path
+        if summary.status == "completed" and summary.summary_storage_path:
+            try:
+                minio.stat_object("camera-summaries", summary.summary_storage_path)
+                valid_summaries.append(summary)
+            except Exception as e:
+                # If the file doesn't exist in MinIO anymore, delete from DB
+                err_str = str(e).lower()
+                if "no such key" in err_str or "nosuchkey" in err_str or "does not exist" in err_str or "404" in err_str:
+                    await db.delete(summary)
+                    await db.commit()
+                else:
+                    valid_summaries.append(summary) # Keep if it's another error
+        else:
+            # Pending or processing or failed without a path
+            valid_summaries.append(summary)
+            
+    return valid_summaries
+
+@summarization_router.delete("/{summary_id}")
+async def delete_summary(summary_id: str, db: AsyncSession = Depends(get_db)):
+    """Deletes a video summary from the database and MinIO."""
+    stmt = select(VideoSummary).filter(VideoSummary.id == summary_id)
+    result = await db.execute(stmt)
+    summary = result.scalars().first()
+    
+    if not summary:
+        raise HTTPException(status_code=404, detail="Summary not found")
+        
+    minio = _get_minio()
+    if summary.summary_storage_path:
+        try:
+            minio.remove_object("camera-summaries", summary.summary_storage_path)
+        except Exception as e:
+            pass # Ignore if already deleted from MinIO
+            
+    await db.delete(summary)
+    await db.commit()
+    
+    return {"message": "Summary deleted successfully"}
+
+@summarization_router.post("/settings/auto")
+async def update_auto_summarize_settings(settings: AutoSummarizeSettings):
+    try:
+        redis_client.set("auto_summarize_enabled", "true" if settings.auto_summarize else "false")
+        return {"status": "success", "auto_summarize": settings.auto_summarize}
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+@summarization_router.get("/settings/auto")
+async def get_auto_summarize_settings():
+    try:
+        val = redis_client.get("auto_summarize_enabled")
+        return {"auto_summarize": val == "true"}
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+@summarization_router.get("/progress/{summary_id}")
+async def get_summary_progress(summary_id: str):
+    """Returns live progress for a running summarization task from Redis."""
+    try:
+        key = f"summarization:progress:{summary_id}"
+        data = redis_client.hgetall(key)
+        if not data:
+            return {"percent": 0, "stage": "pending"}
+        return {
+            "percent": int(data.get("percent", 0)),
+            "stage": data.get("stage", "pending")
+        }
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+@summarization_router.get("/video-url/{summary_id}")
+async def get_summary_video_url(summary_id: str, db: AsyncSession = Depends(get_db)):
+    """Return a short-lived pre-signed MinIO URL for the summary video."""
+    stmt = select(VideoSummary).filter(VideoSummary.id == summary_id)
+    result = await db.execute(stmt)
+    summary = result.scalars().first()
+    if not summary:
+        raise HTTPException(status_code=404, detail="Summary not found")
+    if summary.status != "completed" or not summary.summary_storage_path:
+        raise HTTPException(status_code=400, detail="Summary not ready")
+    try:
+        minio = _get_minio()
+        url = minio.presigned_get_object(
+            "camera-summaries",
+            summary.summary_storage_path,
+            expires=timedelta(hours=1)
+        )
+        return {"url": url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@summarization_router.get("/video/{summary_id}/stream")
+async def stream_summary_video(summary_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """Streams the summary video from MinIO directly through FastAPI supporting Range Requests."""
+    from fastapi.responses import StreamingResponse, Response
+    import re
+
+    stmt = select(VideoSummary).filter(VideoSummary.id == summary_id)
+    result = await db.execute(stmt)
+    summary = result.scalars().first()
+    if not summary:
+        raise HTTPException(status_code=404, detail="Summary not found")
+    if summary.status != "completed" or not summary.summary_storage_path:
+        raise HTTPException(status_code=400, detail="Summary not ready")
+
+    try:
+        minio = _get_minio()
+        storage_path = summary.summary_storage_path
+
+        # 1. Get object metadata (size)
+        stat = minio.stat_object("camera-summaries", storage_path)
+        file_size = stat.size
+
+        # Detect media type from file extension
+        if storage_path.endswith(".webm"):
+            media_type = "video/webm"
+            ext = ".webm"
+        else:
+            media_type = "video/mp4"
+            ext = ".mp4"
+
+        # 2. Parse the Range header
+        range_header = request.headers.get("range")
+
+        start = 0
+        end = file_size - 1
+
+        if range_header:
+            match = re.match(r"bytes=(\d+)-(\d*)", range_header)
+            if match:
+                start = int(match.group(1))
+                if match.group(2):
+                    end = int(match.group(2))
+
+        # Bound check
+        if start >= file_size:
+            raise HTTPException(status_code=416, detail="Requested Range Not Satisfiable")
+        if end >= file_size:
+            end = file_size - 1
+
+        content_length = end - start + 1
+
+        # 3. Request only the specific byte range from MinIO
+        response = minio.get_object(
+            "camera-summaries",
+            storage_path,
+            offset=start,
+            length=content_length
+        )
+
+        def iter_file():
+            try:
+                for chunk in response.stream(32 * 1024):
+                    yield chunk
+            finally:
+                response.close()
+                response.release_conn()
+
+        # Always return 206 Partial Content — this is required for browser video playback
+        # because StreamingResponse cannot set Content-Length with chunked encoding.
+        # 206 with Content-Range tells the browser the exact byte range and total size.
+        headers = {
+            "Content-Disposition": f"inline; filename={summary_id}_summary{ext}",
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-cache",
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Content-Length": str(content_length),
+            "Access-Control-Allow-Origin": "*",
+        }
+
+        return StreamingResponse(
+            iter_file(),
+            status_code=206,
+            media_type=media_type,
+            headers=headers
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+

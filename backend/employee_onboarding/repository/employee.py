@@ -12,7 +12,16 @@ class EmployeeRepository:
     
     async def create_employee(self, employee: EmployeeCreate):
         try:
-            new_employee = Employee(first_name = employee.first_name, last_name= employee.last_name, role= employee.role, embedding_status = "processing")
+            new_employee = Employee(
+                first_name = employee.first_name, 
+                last_name= employee.last_name, 
+                role= employee.role, 
+                assigned_camera_ids = employee.assigned_camera_ids,
+                assigned_days = employee.assigned_days,
+                assigned_shift_start = employee.assigned_shift_start,
+                assigned_shift_end = employee.assigned_shift_end,
+                embedding_status = "processing"
+            )
             self.db.add(new_employee)
             await self.db.flush()
             return new_employee

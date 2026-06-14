@@ -9,13 +9,15 @@ import cv2
 import numpy as np
 import torch
 from ultralytics import YOLO
-from boxmot import StrongSort # find the version of the library tha has this, do not replace this library name please (bosy,abdelrahman)
+from boxmot.trackers.tracker_zoo import create_tracker
 from facenet_pytorch import InceptionResnetV1
 from .embedding_manager import EmbeddingManager
 from kombu import Connection, Exchange, Producer
 from config import Config
+import redis
 
 RABBITMQ_URL = Config.RABBITMQ_BROKER_URL
+redis_client = redis.Redis(host=Config.REDIS_HOST, port=int(Config.REDIS_PORT), db=0)
 attendance_exchange = Exchange('attendance', type='topic', durable=True)
 
 THRESHOLD = 1.0
@@ -28,11 +30,22 @@ device = "cuda:0" if torch.cuda.is_available() else "cpu"
 exchange = Exchange('attendance', type='topic', durable=True)
 
 # function responsible for publishing attendance when an employees face is recognized
-def publish_attendance(emp_id: str):
+def publish_attendance(emp_id: str, camera_id: str):
     with Connection(RABBITMQ_URL) as conn:
         with conn.channel() as channel:
             producer = Producer(channel, exchange=attendance_exchange, routing_key='attendance.detected')
-            producer.publish({'emp_id': emp_id}, serializer='json')
+            producer.publish({'emp_id': emp_id, 'camera_id': camera_id}, serializer='json')
+
+def publish_attendance_left(emp_id: str, camera_id: str, duration_seconds: float):
+    with Connection(RABBITMQ_URL) as conn:
+        with conn.channel() as channel:
+            producer = Producer(channel, exchange=attendance_exchange, routing_key='attendance.left')
+            producer.publish({
+                'emp_id': emp_id,
+                'camera_id': camera_id,
+                'duration_seconds': duration_seconds
+            }, serializer='json')
+
 # ── Logger ───────────────────────────────────────────────────────────────────
 
 class EventLogger:
@@ -82,6 +95,8 @@ def run_pipeline(
     face_retry_frames=FACE_RETRY_FRAMES,
     person_skip=PERSON_SKIP,
     log_file=LOG_FILE,
+    camera_identifier=None,
+    task_id=None,
 ):
     logger = EventLogger(log_file)
     logger.log("PIPELINE_START", detail=f"db={db_folder} threshold={threshold}")
@@ -90,7 +105,8 @@ def run_pipeline(
     weights_dir = Path(__file__).parent / "weights"
     yolo_face = YOLO(str(weights_dir / "yolov12m-face.pt")).to(device)
     yolo_person = YOLO(str(weights_dir / "yolov8n.pt")).to(device)
-    tracker     = StrongSort(
+    tracker     = create_tracker(
+            tracker_type="strongsort",
             reid_weights=weights_dir / "osnet_x0_25_msmt17.pt",
             device=device,
             half=device == "cuda:0",
@@ -105,7 +121,7 @@ def run_pipeline(
 
     # ── Shared state ─────────────────────────────────────────────────────────
     face_queue   = queue.Queue(maxsize=4)
-    identity_map = {}          # track_id -> name
+    identity_map = {}          # track_id -> {"name": name, "emp_id": employee_id}
     identity_lock = threading.Lock()
 
     # ── Sentinel for graceful worker shutdown ────────────────────────────────
@@ -148,12 +164,10 @@ def run_pipeline(
                         name, employee_id, dist = manager.search_face(emb)
                         if dist < threshold and name != "Unknown":
                             with identity_lock:
-                                previous = identity_map.get(track_id)
-                                identity_map[track_id] = name
-                            if previous != name:
-                                logger.log("FACE_IDENTIFIED", track_id=track_id,
-                                           name=name, distance=dist)
-                                publish_attendance(emp_id=str(employee_id)) #you are here
+                                identity_map[track_id] = {"name": name, "emp_id": employee_id}
+                            # Use the helper function to publish attendance
+                            publish_attendance(employee_id, camera_identifier or "unknown")
+                            logger.log("FACE_IDENTIFIED", track_id=track_id, name=name, distance=dist)
                         else:
                             logger.log("FACE_UNKNOWN", track_id=track_id, distance=dist, detail=f"best_match={name}")
                 else:
@@ -207,10 +221,21 @@ def run_pipeline(
     active_tracks   = set()   # tracks currently visible
     fps_counter     = 0
     fps_start       = time.time()
+    
+    # Track average FPS to calculate duration in seconds
+    recent_fps = 10.0 
 
     logger.log("LOOP_START")
     try:
         while True:
+            # Check global or task-specific kill switch
+            global_stop = redis_client.get("stop_all_cameras")
+            task_stop = redis_client.get(f"stop:{task_id}") if task_id else None
+            if (global_stop in [b'1', '1']) or (task_stop in [b'1', '1']):
+                logger.log("GLOBAL_STOP_SIGNAL_RECEIVED")
+                break
+
+
             ret, frame = cam.read()
             if not ret:
                 logger.log("FRAME_READ_FAILED")
@@ -241,6 +266,19 @@ def run_pipeline(
                     x1, y1 = max(0, x1), max(0, y1)
                     x2, y2 = min(w, x2), min(h, y2)
 
+                    # Draw bounding boxes and IDs
+                    with identity_lock:
+                        identity_info = identity_map.get(track_id)
+                        known = identity_info is not None
+                        name = identity_info["name"] if known else "Unknown"
+
+                    color = (0, 255, 0) if known else (0, 0, 255)
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                    cv2.putText(frame, f"{name} ID:{track_id}",
+                                (x1, y1 - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.6, color, 2)
+
                     # FIX: skip person crops that are too small for reliable face detection
                     if (x2 - x1) < 40 or (y2 - y1) < 80:
                         continue
@@ -252,9 +290,6 @@ def run_pipeline(
                     if track_id not in active_tracks:
                         active_tracks.add(track_id)
                         logger.log("PERSON_ENTERED", track_id=track_id)
-
-                    with identity_lock:
-                        known = identity_map.get(track_id, "Unknown") != "Unknown"
 
                     last = track_last_face.get(track_id, -face_retry_frames)
                     if (
@@ -272,21 +307,38 @@ def run_pipeline(
                                 # FIX: log queue-full events to help diagnose back-pressure
                                 logger.log("QUEUE_FULL", track_id=track_id)
 
+            # Publish annotated frame to Redis if camera_identifier is provided
+            if camera_identifier:
+                try:
+                    _, buffer = cv2.imencode('.jpg', frame)
+                    redis_client.set(f"live_frame:{camera_identifier}", buffer.tobytes(), ex=5)
+                except Exception as e:
+                    logger.log("REDIS_PUBLISH_ERROR", detail=str(e))
+
             # Log tracks that have disappeared
             gone = active_tracks - current_ids
             for track_id in gone:
                 active_tracks.discard(track_id)
                 with identity_lock:
-                    name = identity_map.pop(track_id, "Unknown")
+                    identity_info = identity_map.pop(track_id, None)
+                
+                frames_visible = track_ages.get(track_id, 0)
+                duration_sec = frames_visible / recent_fps if recent_fps > 0 else 0
+                
+                name = "Unknown"
+                if identity_info:
+                    name = identity_info["name"]
+                    publish_attendance_left(identity_info["emp_id"], camera_identifier or "unknown", duration_sec)
+                    
                 logger.log("PERSON_LEFT", track_id=track_id, name=name,
-                           detail=f"age={track_ages.get(track_id, 0)}_frames")
+                           detail=f"age={frames_visible}_frames dur={duration_sec:.1f}s")
 
             # Log FPS every 5 seconds
             if time.time() - fps_start >= 5.0:
-                fps = fps_counter / 5
+                recent_fps = fps_counter / 5
                 fps_counter = 0
                 fps_start   = time.time()
-                logger.log("FPS", detail=f"{fps:.1f}")
+                logger.log("FPS", detail=f"{recent_fps:.1f}")
 
     except KeyboardInterrupt:
         logger.log("INTERRUPTED_BY_USER")
@@ -298,5 +350,18 @@ def run_pipeline(
         except Exception:
             pass
         cam.stop()
+        
+        import gc
+        try:
+            del yolo_person
+            del yolo_face
+            del resnet
+            del tracker
+            del manager
+        except NameError:
+            pass
+        torch.cuda.empty_cache()
+        gc.collect()
+
         logger.log("PIPELINE_STOPPED",
                    detail=f"total_frames={frame_idx} log={log_file}")

@@ -22,7 +22,7 @@ services:
       - ./data/compose:/data
 
   rabbitmq:
-    image: rabbitmq:latest
+    image: rabbitmq:3-management
     container_name: rabbitmq
     restart: always
     ports:
@@ -38,7 +38,7 @@ services:
     image: redis:7-alpine
     container_name: redis
     ports:
-      - "6379:6379"
+      - "16379:6379"
     volumes:
       - redis_data:/data
     restart: unless-stopped
@@ -52,7 +52,7 @@ services:
     image: confluentinc/cp-zookeeper:7.4.0
     hostname: zookeeper
     ports:
-      - "22181:2181"
+      - "32181:2181"
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000

@@ -33,3 +33,23 @@ class AnomalyRepository:
             select(Anomaly).where(Anomaly.id == anomaly_id)
         )
         return result.scalars().one_or_none()
+
+    async def delete_by_id(self, anomaly_id: int) -> bool:
+        anomaly = await self.fetch_by_id(anomaly_id)
+        if not anomaly:
+            return False
+        await self.db.delete(anomaly)
+        await self.db.commit()
+        return True
+
+    async def delete_multiple(self, anomaly_ids: list[int]) -> int:
+        from sqlalchemy import delete
+        result = await self.db.execute(delete(Anomaly).where(Anomaly.id.in_(anomaly_ids)))
+        await self.db.commit()
+        return result.rowcount
+
+    async def delete_all(self) -> int:
+        from sqlalchemy import delete
+        result = await self.db.execute(delete(Anomaly))
+        await self.db.commit()
+        return result.rowcount

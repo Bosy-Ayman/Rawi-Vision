@@ -8,6 +8,10 @@ class EmployeeBase(BaseModel):
     first_name: str
     last_name: str
     role: str  # must be changed to enum later on when the roles get defined.
+    assigned_camera_ids: List[str] | None = None
+    assigned_days: List[int] | None = None
+    assigned_shift_start: str | None = None
+    assigned_shift_end: str | None = None
 
 class EmployeeCreate(EmployeeBase):
     pass
@@ -27,3 +31,7 @@ class EmployeeUpdate(BaseModel):
     role: str | None = None
     embedding: list[float] | None = None
     embedding_status : str| None =  None
+    assigned_camera_ids: List[str] | None = None
+    assigned_days: List[int] | None = None
+    assigned_shift_start: str | None = None
+    assigned_shift_end: str | None = None

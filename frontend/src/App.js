@@ -5,10 +5,11 @@ import LandingPage from './pages/LandingPage';
 import VideoFeedPage from './pages/VideoFeed';
 import SmartSearch from './pages/SmartSearch';
 import Anomalies from './pages/Anomalies';
-import EmployeeInsights from './pages/EmployeeInsights';
+import Clips from './pages/Clips';
 import EmployeeOnboarding from './pages/EmployeeOnboarding';
 import AllEmployees from './pages/AllEmployees';
 import EmployeeDetails from './pages/EmployeeDetails';
+import EmployeeInsights from './pages/EmployeeInsights';
 import SystemUserManagement from './pages/SystemUserManagement';
 import Settings from './pages/Settings';
 import CustomCursor from './components/CustomCursor';
@@ -16,6 +17,7 @@ import DashboardMain from './pages/DashboardMain';
 
 import CameraOnboarding from './pages/CameraOnboarding';
 import AllCameras from './pages/AllCameras';
+import Summarization from './pages/Summarization';
 
 import { SubscriptionProvider } from './context/SubscriptionContext';
 import SubscriptionGuard from './components/dashboard/SubscriptionGuard';
@@ -32,15 +34,18 @@ function App() {
 
           <Routes>
             <Route path="/" element={<LandingPage />} />
-            
+
             {/* Guarded dashboard and admin routes */}
             <Route path="/dashboard/main" element={<SubscriptionGuard><DashboardMain /></SubscriptionGuard>} />
             <Route path="/dashboard/video-feed" element={<SubscriptionGuard><VideoFeedPage /></SubscriptionGuard>} />
             <Route path="/dashboard/smart-search" element={<SubscriptionGuard><SmartSearch /></SubscriptionGuard>} />
             <Route path="/dashboard/anomalies" element={<SubscriptionGuard><Anomalies /></SubscriptionGuard>} />
-            <Route path="/dashboard/employee-insights" element={<SubscriptionGuard><EmployeeInsights /></SubscriptionGuard>} />
+            <Route path="/dashboard/room-alerts" element={<SubscriptionGuard><Anomalies /></SubscriptionGuard>} />
+            <Route path="/dashboard/clips" element={<SubscriptionGuard><Clips /></SubscriptionGuard>} />
+            <Route path="/dashboard/summarization" element={<SubscriptionGuard><Summarization /></SubscriptionGuard>} />
             <Route path="/dashboard/employee-onboarding" element={<SubscriptionGuard><EmployeeOnboarding /></SubscriptionGuard>} />
             <Route path="/dashboard/all-employees" element={<SubscriptionGuard><AllEmployees /></SubscriptionGuard>} />
+            <Route path="/dashboard/employee-insights" element={<SubscriptionGuard><EmployeeInsights /></SubscriptionGuard>} />
             <Route path="/dashboard/employee/:id" element={<SubscriptionGuard><EmployeeDetails /></SubscriptionGuard>} />
 
             <Route path="/dashboard/camera-onboarding" element={<SubscriptionGuard><CameraOnboarding /></SubscriptionGuard>} />

@@ -1,13 +1,21 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
 import { attendanceAPI } from '../api/attendance';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LineChart, Line } from 'recharts';
+import { anomalyAPI } from '../api/anomalies';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
 import EmployeeAvatar from '../components/dashboard/EmployeeAvatar';
+import EmployeeModal from '../components/dashboard/EmployeeModal';
 import './DashboardMain.css';
 
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
+
 const DashboardMain = () => {
+    const navigate = useNavigate();
     const [attendanceData, setAttendanceData] = useState([]);
+    const [anomalies, setAnomalies] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [selectedEmployee, setSelectedEmployee] = useState(null); // Modal state
     
     // Pagination & Filter States
     const [currentPage, setCurrentPage] = useState(1);
@@ -16,103 +24,297 @@ const DashboardMain = () => {
     const recordsPerPage = 8;
 
     useEffect(() => {
-        const fetchAttendance = async () => {
+        const fetchDashboardData = async () => {
             try {
-                const data = await attendanceAPI.getAllAttendance();
-                setAttendanceData(data);
+                const [attData, anomData] = await Promise.all([
+                    attendanceAPI.getAllAttendance(),
+                    anomalyAPI.getAnomalies().catch(e => {
+                        console.error("Failed to fetch anomalies", e);
+                        return [];
+                    })
+                ]);
+                setAttendanceData(attData);
+                setAnomalies(anomData);
             } catch (error) {
-                console.error("Failed to fetch attendance records", error);
+                console.error("Failed to fetch dashboard records", error);
             } finally {
                 setLoading(false);
             }
         };
-        fetchAttendance();
+        fetchDashboardData();
+        
+        // Polling every 5 seconds
+        const intervalId = setInterval(fetchDashboardData, 5000);
+        return () => clearInterval(intervalId);
     }, []);
 
-    // Derived stats and chart data
-    const { stats, sortedData, chartDataDay, chartDataHour } = useMemo(() => {
+    // Derived stats, aggregation, and chart data
+    const { stats, aggregatedData, chartDataDay, chartDataHour, chartDataRole, chartDataCamera, chartDataAvgDuration, chartDataTopEngaged, chartDataCameraRole, allRoles } = useMemo(() => {
         const dateObj = new Date();
         const year = dateObj.getFullYear();
         const month = String(dateObj.getMonth() + 1).padStart(2, '0');
         const day = String(dateObj.getDate()).padStart(2, '0');
         const today = `${year}-${month}-${day}`;
-        
-        const presentToday = attendanceData.filter(record => {
-            if (!record.day) return false;
-            return record.day.startsWith(today);
-        }).length;
 
-        const sorted = [...attendanceData].sort((a, b) => new Date(b.date_created) - new Date(a.date_created));
-        const latest = sorted.length > 0 ? sorted[0] : null;
+        // 1. Group records by employee AND day to compute "Visits" and "Duration"
+        const grouped = {};
+        const cameraRoleUniquePeople = {}; // camId -> { role: Set(employee_id) }
+        const uniqueRoles = new Set();
+
+        // We will collect all intervals (start, end) for each (employee_id, day) and each camera
+        const intervals = {}; // key: employee_id_day -> [{start, end, camId}]
+        
+        attendanceData.forEach(record => {
+            if (!record.day || !record.date_created) return;
+            
+            const key = `${record.employee_id}_${record.day}`;
+            const start = new Date(record.date_created).getTime();
+            // Fall back to date_created + duration_seconds if last_seen is missing/null/equal to date_created
+            const durationSec = record.duration_seconds || 0;
+            let end = start + (durationSec * 1000);
+            if (record.last_seen) {
+                const lastSeenTime = new Date(record.last_seen).getTime();
+                if (lastSeenTime > end) {
+                    end = lastSeenTime;
+                }
+            }
+            
+            const camId = record.camera_id || "Unknown";
+
+            if (!intervals[key]) {
+                intervals[key] = [];
+            }
+            intervals[key].push({ start, end, camId, record });
+
+            // Camera Role Tracking
+            const roleKey = record.role || "Employee";
+            if (!cameraRoleUniquePeople[camId]) cameraRoleUniquePeople[camId] = {};
+            if (!cameraRoleUniquePeople[camId][roleKey]) cameraRoleUniquePeople[camId][roleKey] = new Set();
+            cameraRoleUniquePeople[camId][roleKey].add(record.employee_id);
+            uniqueRoles.add(roleKey);
+        });
+
+        const dailyUniquePeople = {}; // day -> Set of employee_ids
+        const dailyTotalDuration = {}; // day -> total duration in seconds
+        const cameraDurations = {}; // camera_id -> total duration
+
+        // Merge intervals for each employee + day to compute actual duration
+        Object.entries(intervals).forEach(([key, list]) => {
+            if (list.length === 0) return;
+            const sorted = list.sort((a, b) => a.start - b.start);
+            
+            // Merge intervals with a 20-minute (1200000 ms) grace period
+            const mergedTotal = [];
+            let currentTotal = { start: sorted[0].start, end: sorted[0].end };
+            const gracePeriodMs = 20 * 60 * 1000;
+            
+            for (let i = 1; i < sorted.length; i++) {
+                const item = sorted[i];
+                if (item.start <= currentTotal.end) {
+                    currentTotal.end = Math.max(currentTotal.end, item.end);
+                } else if (item.start - currentTotal.end <= gracePeriodMs) {
+                    // Gap is within tolerance, bridge the gap completely
+                    currentTotal.end = Math.max(currentTotal.end, item.end);
+                } else {
+                    // Gap exceeds tolerance, add exactly maxToleranceMs to the current interval
+                    currentTotal.end += gracePeriodMs;
+                    mergedTotal.push(currentTotal);
+                    currentTotal = { start: item.start, end: item.end };
+                }
+            }
+            mergedTotal.push(currentTotal);
+            
+            const totalActiveMs = mergedTotal.reduce((sum, interval) => sum + (interval.end - interval.start), 0);
+            const totalDurationSec = totalActiveMs / 1000;
+            
+            // Build the grouped record for main table
+            const baseRecord = sorted[0].record;
+            const dayStr = baseRecord.day;
+            
+            const firstSeenMs = Math.min(...sorted.map(s => s.start));
+            const lastSeenMs = Math.max(...sorted.map(s => s.end));
+            
+            grouped[key] = {
+                ...baseRecord,
+                look_count: sorted.length, // total visits/sessions
+                first_seen: new Date(firstSeenMs).toISOString(),
+                last_seen: new Date(lastSeenMs).toISOString(),
+                total_duration_seconds: totalDurationSec,
+                active_duration_seconds: totalDurationSec
+            };
+
+            // Aggregate day-wise unique people & duration
+            if (!dailyUniquePeople[dayStr]) dailyUniquePeople[dayStr] = new Set();
+            dailyUniquePeople[dayStr].add(baseRecord.employee_id);
+            dailyTotalDuration[dayStr] = (dailyTotalDuration[dayStr] || 0) + totalDurationSec;
+
+            // Merge intervals camera-wise for camera specific durations
+            const cameraIntervals = {};
+            sorted.forEach(item => {
+                if (!cameraIntervals[item.camId]) cameraIntervals[item.camId] = [];
+                cameraIntervals[item.camId].push(item);
+            });
+
+            Object.entries(cameraIntervals).forEach(([camId, camList]) => {
+                const mergedCam = [];
+                let currentCam = { start: camList[0].start, end: camList[0].end };
+                for (let i = 1; i < camList.length; i++) {
+                    const item = camList[i];
+                    if (item.start <= currentCam.end) {
+                        currentCam.end = Math.max(currentCam.end, item.end);
+                    } else {
+                        mergedCam.push(currentCam);
+                        currentCam = { start: item.start, end: item.end };
+                    }
+                }
+                mergedCam.push(currentCam);
+                const camDurationMs = mergedCam.reduce((sum, interval) => sum + (interval.end - interval.start), 0);
+                cameraDurations[camId] = (cameraDurations[camId] || 0) + (camDurationMs / 1000);
+            });
+        });
+
+        // 2. Sort aggregated data by last_seen
+        const sortedAggregated = Object.values(grouped).sort((a, b) => new Date(b.last_seen) - new Date(a.last_seen));
+
+        const presentToday = sortedAggregated.filter(record => record.day.startsWith(today)).length;
+        const latest = sortedAggregated.length > 0 ? sortedAggregated[0] : null;
 
         // --- Chart Data Processing & Top Attender Logic ---
         const dayMap = {};
         const hourMap = {};
+        const roleMap = {};
         const employeeCheckinCount = {};
+        const employeeTotalDuration = {};
+        const employeeObjects = {}; // name -> record for avatars
 
-        // Calculate 7 days ago limit
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-        // Fill maps
-        attendanceData.forEach(record => {
-            if (!record.day || !record.date_created) return;
-            
+        // Process merged daily intervals for accurate top attender / graph logic
+        Object.entries(grouped).forEach(([key, record]) => {
             const recordDate = new Date(record.day);
+            const empName = `${record.first_name} ${record.last_name}`;
             
-            // Top Attender Logic (only last 7 days)
+            // Check if record falls in the last 7 days
             if (recordDate >= sevenDaysAgo) {
-                const empName = `${record.first_name} ${record.last_name}`;
-                employeeCheckinCount[empName] = (employeeCheckinCount[empName] || 0) + 1;
+                employeeCheckinCount[empName] = (employeeCheckinCount[empName] || 0) + record.look_count;
+                employeeTotalDuration[empName] = (employeeTotalDuration[empName] || 0) + record.total_duration_seconds;
+                if (!employeeObjects[empName]) employeeObjects[empName] = record;
             }
 
             // Group by Day (for Bar Chart)
             const dayKey = recordDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-            dayMap[dayKey] = (dayMap[dayKey] || 0) + 1;
+            dayMap[dayKey] = dailyUniquePeople[record.day]?.size || 0;
 
             // Group by Hour (for Line Chart)
-            const h = new Date(record.date_created).getHours();
+            const h = new Date(record.first_seen).getHours();
             const hourKey = `${h}:00`;
-            hourMap[hourKey] = (hourMap[hourKey] || 0) + 1;
+            hourMap[hourKey] = (hourMap[hourKey] || 0) + record.look_count;
+
+            // Group by Role
+            const rKey = record.role || "Employee";
+            roleMap[rKey] = (roleMap[rKey] || 0) + record.look_count;
         });
 
-        // Find Top Attender
-        let topAttenderName = "No records";
+        // Find Top Visitor (by Count of Visits)
+        let topAttender = null;
         let topAttenderCount = 0;
         Object.entries(employeeCheckinCount).forEach(([name, count]) => {
             if (count > topAttenderCount) {
                 topAttenderCount = count;
-                topAttenderName = name;
+                topAttender = employeeObjects[name];
             }
         });
 
-        // Ensure chronological order for Bar Chart
         const uniqueDates = [...new Set(attendanceData.map(r => r.day))].sort();
         const last7Days = uniqueDates.slice(-7);
         const processedChartDataDay = last7Days.map(dateStr => {
             const key = new Date(dateStr).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-            return { name: key, checkins: dayMap[key] || 0 };
+            return { name: key, people: dayMap[key] || 0 };
         });
 
-        // Ensure chronological order for Line Chart
+        const processedChartDataAvgDuration = last7Days.map(dateStr => {
+            const key = new Date(dateStr).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+            const totalSecs = dailyTotalDuration[dateStr] || 0;
+            const uniqueCount = dailyUniquePeople[dateStr]?.size || 1; // Avoid div by zero
+            return { name: key, avgMins: parseFloat(((totalSecs / uniqueCount) / 60).toFixed(1)) };
+        });
+
+        // Top 5 Engaged Employees by Duration (Mins)
+        const topEngagedEmployees = Object.entries(employeeTotalDuration)
+            .map(([name, duration]) => ({ name, mins: parseFloat((duration / 60).toFixed(1)) }))
+            .sort((a, b) => b.mins - a.mins)
+            .slice(0, 5);
+
         const sortedHours = Object.keys(hourMap).sort((a, b) => parseInt(a) - parseInt(b));
         const processedChartDataHour = sortedHours.map(hour => ({ name: hour, checkins: hourMap[hour] }));
+
+        const processedChartDataRole = Object.keys(roleMap).map(role => ({ name: role, value: roleMap[role] }));
+        
+        const processedChartDataCamera = Object.keys(cameraDurations).map(cam => ({
+            name: cam,
+            minutes: parseFloat((cameraDurations[cam] / 60).toFixed(1))
+        }));
+
+        // Camera Role Stacked Chart (Unique People per role per camera)
+        const processedChartCameraRole = Object.keys(cameraRoleUniquePeople).map(cam => {
+            const dataPoint = { name: cam };
+            Object.entries(cameraRoleUniquePeople[cam]).forEach(([role, empSet]) => {
+                dataPoint[role] = empSet.size;
+            });
+            return dataPoint;
+        });
 
         return {
             stats: {
                 totalPresent: presentToday,
-                topAttender: `${topAttenderName} (${topAttenderCount} days)`,
-                latestArrival: latest ? `${latest.first_name} ${latest.last_name}` : "None today"
+                topAttender: topAttender ? {
+                    name: `${topAttender.first_name} ${topAttender.last_name}`,
+                    count: topAttenderCount,
+                    imageUrl: topAttender.profile_image_url,
+                    first: topAttender.first_name,
+                    last: topAttender.last_name,
+                    record: topAttender
+                } : null,
+                latestArrival: latest ? {
+                    name: `${latest.first_name} ${latest.last_name}`,
+                    time: new Date(latest.last_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    imageUrl: latest.profile_image_url,
+                    first: latest.first_name,
+                    last: latest.last_name,
+                    record: latest
+                } : null
             },
-            sortedData: sorted,
+            aggregatedData: sortedAggregated,
             chartDataDay: processedChartDataDay,
-            chartDataHour: processedChartDataHour
+            chartDataHour: processedChartDataHour,
+            chartDataRole: processedChartDataRole,
+            chartDataCamera: processedChartDataCamera,
+            chartDataAvgDuration: processedChartDataAvgDuration,
+            chartDataTopEngaged: topEngagedEmployees,
+            chartDataCameraRole: processedChartCameraRole,
+            allRoles: Array.from(uniqueRoles)
         };
     }, [attendanceData]);
 
-    // Apply Search and Date Filters
+    const anomaliesToday = useMemo(() => {
+        const todayStr = new Date().toISOString().split('T')[0];
+        return anomalies.filter(anom => anom.detected_at && anom.detected_at.startsWith(todayStr)).length;
+    }, [anomalies]);
+
+    const anomalyChartData = useMemo(() => {
+        const uniqueDates = [...new Set(attendanceData.map(r => r.day))].sort();
+        const last7Days = uniqueDates.slice(-7);
+        return last7Days.map(dateStr => {
+            const count = anomalies.filter(anom => anom.detected_at && anom.detected_at.startsWith(dateStr)).length;
+            const label = new Date(dateStr).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+            return { name: label, count };
+        });
+    }, [anomalies, attendanceData]);
+
+    // Apply Search and Date Filters on aggregated data
     const filteredRecords = useMemo(() => {
-        return sortedData.filter(record => {
+        return aggregatedData.filter(record => {
             const matchesSearch = 
                 record.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 record.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -122,14 +324,13 @@ const DashboardMain = () => {
 
             return matchesSearch && matchesDate;
         });
-    }, [sortedData, searchTerm, filterDate]);
+    }, [aggregatedData, searchTerm, filterDate]);
 
-    // Reset pagination when filters change
     useEffect(() => {
         setCurrentPage(1);
     }, [searchTerm, filterDate]);
 
-    // Pagination logic
+    // Pagination
     const indexOfLastRecord = currentPage * recordsPerPage;
     const indexOfFirstRecord = indexOfLastRecord - recordsPerPage;
     const currentRecords = filteredRecords.slice(indexOfFirstRecord, indexOfLastRecord);
@@ -154,47 +355,218 @@ const DashboardMain = () => {
                 {/* Stats Row */}
                 <div className="stats-row">
                     <div className="stat-card">
-                        <h3>Present Today</h3>
+                        <h3>Employees Present Today</h3>
                         <p className="stat-value highlight-green">{stats.totalPresent}</p>
                     </div>
                     <div className="stat-card">
-                        <h3>Top Attender (7 Days)</h3>
-                        <p className="stat-value truncate" title={stats.topAttender}>{stats.topAttender}</p>
+                        <h3>Most Frequent Visitor</h3>
+                        {stats.topAttender ? (
+                            <div className="stat-card-enhanced" style={{cursor: 'pointer'}} onClick={() => setSelectedEmployee(stats.topAttender.record)}>
+                                <EmployeeAvatar imageUrl={stats.topAttender.imageUrl} firstName={stats.topAttender.first} lastName={stats.topAttender.last} />
+                                <div className="stat-card-info">
+                                    <span className="stat-card-name" title={stats.topAttender.name}>{stats.topAttender.name}</span>
+                                    <span className="stat-card-sub">{stats.topAttender.count} visits (7 Days)</span>
+                                </div>
+                            </div>
+                        ) : (
+                            <p className="stat-value">None</p>
+                        )}
                     </div>
                     <div className="stat-card">
                         <h3>Latest Arrival</h3>
-                        <p className="stat-value truncate" title={stats.latestArrival}>{stats.latestArrival}</p>
+                        {stats.latestArrival ? (
+                            <div className="stat-card-enhanced" style={{cursor: 'pointer'}} onClick={() => setSelectedEmployee(stats.latestArrival.record)}>
+                                <EmployeeAvatar imageUrl={stats.latestArrival.imageUrl} firstName={stats.latestArrival.first} lastName={stats.latestArrival.last} />
+                                <div className="stat-card-info">
+                                    <span className="stat-card-name" title={stats.latestArrival.name}>{stats.latestArrival.name}</span>
+                                    <span className="stat-card-sub">{stats.latestArrival.time}</span>
+                                </div>
+                            </div>
+                        ) : (
+                            <p className="stat-value">None today</p>
+                        )}
+                    </div>
+                    <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => navigate('/dashboard/anomalies')}>
+                        <h3>Anomalies Today</h3>
+                        <p className="stat-value" style={{ color: '#ef4444' }}>{anomaliesToday}</p>
+                        <span className="stat-card-sub">{anomalies.length} total events logged</span>
                     </div>
                 </div>
 
-                {/* Charts Row */}
+                {/* Charts Row 1 */}
                 {attendanceData.length > 0 && !loading && (
                     <div className="charts-row">
                         <div className="chart-card">
-                            <h3 className="section-title">Attendance Over Time (Last 7 Days)</h3>
+                            <h3 className="section-title">Unique People per Day</h3>
                             <div className="chart-wrapper">
                                 <ResponsiveContainer width="100%" height="100%">
                                     <BarChart data={chartDataDay}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} dy={10} />
-                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
-                                        <Tooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} />
-                                        <Bar dataKey="checkins" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
+                                        <defs>
+                                            <linearGradient id="colorPeople" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.9}/>
+                                                <stop offset="95%" stopColor="#c4b5fd" stopOpacity={0.2}/>
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} dy={10} />
+                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                                        <Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }} contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
+                                        <Bar dataKey="people" fill="url(#colorPeople)" radius={[6, 6, 0, 0]} barSize={32} name="Unique People" />
                                     </BarChart>
                                 </ResponsiveContainer>
                             </div>
                         </div>
 
                         <div className="chart-card">
-                            <h3 className="section-title">Peak Arrival Times</h3>
+                            <h3 className="section-title">Avg Duration per Person (Mins)</h3>
+                            <div className="chart-wrapper">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={chartDataAvgDuration}>
+                                        <defs>
+                                            <filter id="shadowAvg" height="200%">
+                                                <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#f59e0b" floodOpacity="0.3" />
+                                            </filter>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} dy={10} />
+                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                                        <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
+                                        <Line type="monotone" dataKey="avgMins" stroke="#f59e0b" strokeWidth={4} filter="url(#shadowAvg)" dot={{ r: 5, fill: '#fff', strokeWidth: 3, stroke: '#f59e0b' }} activeDot={{ r: 8 }} name="Avg Mins" />
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        <div className="chart-card">
+                            <h3 className="section-title">Time per Camera (Mins)</h3>
+                            <div className="chart-wrapper">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={chartDataCamera} layout="vertical">
+                                        <defs>
+                                            <linearGradient id="colorCamera" x1="0" y1="0" x2="1" y2="0">
+                                                <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.8}/>
+                                                <stop offset="95%" stopColor="#5eead4" stopOpacity={0.9}/>
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                                        <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} width={80} />
+                                        <Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }} contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
+                                        <Bar dataKey="minutes" fill="url(#colorCamera)" radius={[0, 6, 6, 0]} barSize={20} name="Minutes" />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Charts Row 2 */}
+                {attendanceData.length > 0 && !loading && (
+                    <div className="charts-row">
+                        <div className="chart-card">
+                            <h3 className="section-title">Top Engaged Employees (Time)</h3>
+                            <div className="chart-wrapper">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={chartDataTopEngaged} layout="vertical">
+                                        <defs>
+                                            <linearGradient id="colorTop" x1="0" y1="0" x2="1" y2="0">
+                                                <stop offset="5%" stopColor="#ec4899" stopOpacity={0.8}/>
+                                                <stop offset="95%" stopColor="#f472b6" stopOpacity={0.9}/>
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                                        <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} width={100} />
+                                        <Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }} contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
+                                        <Bar dataKey="mins" fill="url(#colorTop)" radius={[0, 6, 6, 0]} barSize={20} name="Total Mins" />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        <div className="chart-card">
+                            <h3 className="section-title">Peak Interaction Hours</h3>
                             <div className="chart-wrapper">
                                 <ResponsiveContainer width="100%" height="100%">
                                     <LineChart data={chartDataHour}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} dy={10} />
-                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
-                                        <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} />
-                                        <Line type="monotone" dataKey="checkins" stroke="#10b981" strokeWidth={3} dot={{ r: 4, fill: '#10b981', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+                                        <defs>
+                                            <filter id="shadowPeak" height="200%">
+                                                <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#10b981" floodOpacity="0.3" />
+                                            </filter>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} dy={10} />
+                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                                        <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
+                                        <Line type="monotone" dataKey="checkins" stroke="#10b981" strokeWidth={4} filter="url(#shadowPeak)" dot={{ r: 5, fill: '#fff', strokeWidth: 3, stroke: '#10b981' }} activeDot={{ r: 8 }} name="Interactions" />
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Charts Row 3 */}
+                {attendanceData.length > 0 && !loading && (
+                    <div className="charts-row">
+                        <div className="chart-card">
+                            <h3 className="section-title">Role Distribution per Camera</h3>
+                            <p style={{ fontSize: '13px', color: '#64748b', marginTop: '-8px', marginBottom: '8px' }}>
+                                Unique individuals by role across cameras.
+                            </p>
+                            <div className="chart-wrapper">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={chartDataCameraRole} layout="vertical">
+                                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                                        <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} width={80} />
+                                        <Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }} contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
+                                        {allRoles.map((role, idx) => (
+                                            <Bar 
+                                                key={role} 
+                                                dataKey={role} 
+                                                stackId="a" 
+                                                fill={COLORS[idx % COLORS.length]} 
+                                                radius={idx === allRoles.length - 1 ? [0, 6, 6, 0] : [0, 0, 0, 0]} 
+                                                name={role}
+                                            />
+                                        ))}
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+                        
+                        <div className="chart-card">
+                            <h3 className="section-title">Total Visits by Role</h3>
+                            <div className="chart-wrapper">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie data={chartDataRole} cx="50%" cy="50%" innerRadius={70} outerRadius={100} paddingAngle={5} dataKey="value" nameKey="name">
+                                            {chartDataRole.map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                            ))}
+                                        </Pie>
+                                        <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        <div className="chart-card">
+                            <h3 className="section-title">Anomaly Trend (7 Days)</h3>
+                            <div className="chart-wrapper">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={anomalyChartData}>
+                                        <defs>
+                                            <filter id="shadowAnom" height="200%">
+                                                <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#ef4444" floodOpacity="0.3" />
+                                            </filter>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} dy={10} />
+                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                                        <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
+                                        <Line type="monotone" dataKey="count" stroke="#ef4444" strokeWidth={4} filter="url(#shadowAnom)" dot={{ r: 5, fill: '#fff', strokeWidth: 3, stroke: '#ef4444' }} activeDot={{ r: 8 }} name="Anomalies" />
                                     </LineChart>
                                 </ResponsiveContainer>
                             </div>
@@ -205,7 +577,7 @@ const DashboardMain = () => {
                 {/* Table Section */}
                 <div className="table-section">
                     <div className="table-header-row">
-                        <h2 className="section-title" style={{ margin: 0 }}>Live Attendance Log</h2>
+                        <h2 className="section-title" style={{ margin: 0 }}>Live Attendance & Duration Log</h2>
                         <div className="table-filters">
                             <input 
                                 type="date" 
@@ -224,9 +596,9 @@ const DashboardMain = () => {
                     </div>
 
                     {loading ? (
-                        <p className="loading-text">Loading live attendance data...</p>
+                        <p className="loading-text">Loading live data...</p>
                     ) : filteredRecords.length === 0 ? (
-                        <p className="loading-text">No attendance records match your search filters.</p>
+                        <p className="loading-text">No records match your filters.</p>
                     ) : (
                         <div className="table-wrapper-flex">
                             <div className="table-responsive">
@@ -236,25 +608,43 @@ const DashboardMain = () => {
                                             <th>Employee Name</th>
                                             <th>Role</th>
                                             <th>Date</th>
-                                            <th>Time In</th>
+                                            <th>First Time In</th>
+                                            <th>Last Seen</th>
+                                            <th>Duration</th>
+                                            <th>Sessions / Visits</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {currentRecords.map(record => (
-                                            <tr key={record.id}>
-                                                <td className="emp-name">
-                                                    <EmployeeAvatar 
-                                                        imageUrl={record.profile_image_url} 
-                                                        firstName={record.first_name} 
-                                                        lastName={record.last_name} 
-                                                    />
-                                                    {record.first_name} {record.last_name}
-                                                </td>
-                                                <td className="emp-role">{record.role || "Employee"}</td>
-                                                <td>{formatDate(record.day)}</td>
-                                                <td>{formatTime(record.date_created)}</td>
-                                            </tr>
-                                        ))}
+                                        {currentRecords.map(record => {
+                                            const durationMins = Math.floor(record.total_duration_seconds / 60);
+                                            const durationSecs = Math.floor(record.total_duration_seconds % 60);
+                                            const durationText = record.total_duration_seconds > 0 
+                                                ? `${durationMins}m ${durationSecs}s` 
+                                                : "Live";
+
+                                            return (
+                                                <tr key={`${record.employee_id}_${record.day}`} onClick={() => setSelectedEmployee(record)} style={{cursor: 'pointer'}}>
+                                                    <td className="emp-name">
+                                                        <EmployeeAvatar 
+                                                            imageUrl={record.profile_image_url} 
+                                                            firstName={record.first_name} 
+                                                            lastName={record.last_name} 
+                                                        />
+                                                        {record.first_name} {record.last_name}
+                                                    </td>
+                                                    <td className="emp-role">
+                                                        <span className="role-badge">{record.role || "Employee"}</span>
+                                                    </td>
+                                                    <td>{formatDate(record.day)}</td>
+                                                    <td className="time-cell">{formatTime(record.first_seen)}</td>
+                                                    <td className="time-cell">{formatTime(record.last_seen)}</td>
+                                                    <td className="time-cell font-mono">{durationText}</td>
+                                                    <td className="look-count-cell">
+                                                        <div className="look-badge">{record.look_count}</div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </div>
@@ -285,8 +675,16 @@ const DashboardMain = () => {
                     )}
                 </div>
             </div>
+            
+            {/* Employee Details Modal */}
+            <EmployeeModal 
+                employee={selectedEmployee} 
+                allAttendanceData={{ records: attendanceData, alerts: anomalies }} 
+                onClose={() => setSelectedEmployee(null)} 
+            />
         </DashboardLayout>
     );
 };
 
 export default DashboardMain;
+

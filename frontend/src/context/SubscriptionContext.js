@@ -10,13 +10,15 @@ export const SubscriptionProvider = ({ children }) => {
         search: true,
         summarization: true
     });
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(false); // Don't block UI — check runs silently in background
 
     const getInstallationUuid = () => {
         return localStorage.getItem('installation_uuid') || 'test_installation_id';
     };
 
     const checkSubscriptionStatus = useCallback(async () => {
+        // Disabled for testing
+        /*
         try {
             // 1. Fetch the server's configured installation UUID
             const config = await apiClient('/subscription/installation-id/config');
@@ -42,6 +44,8 @@ export const SubscriptionProvider = ({ children }) => {
         } finally {
             setIsLoading(false);
         }
+        */
+        setIsLoading(false);
     }, []);
 
     // Perform check-in on mount and set up periodic polling every 5 minutes

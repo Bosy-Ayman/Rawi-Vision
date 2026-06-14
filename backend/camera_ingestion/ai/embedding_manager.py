@@ -5,14 +5,17 @@ import json
 import os 
 
 class EmbeddingManager:
-    def __init__(self, db_config, dim=512):
-        self.db_config = {
-            "host": os.getenv("DB_HOST"),
-            "port": int(os.getenv("DB_PORT", 5432)),
-            "dbname": os.getenv("DB_NAME"),
-            "user": os.getenv("DB_USER"),
-            "password": os.getenv("DB_PASSWORD"),
-        }
+    def __init__(self, db_config=None, dim=512):
+        if db_config is None:
+            self.db_config = {
+                "host": os.getenv("DB_HOST"),
+                "port": int(os.getenv("DB_PORT", 5432)),
+                "dbname": os.getenv("DB_NAME"),
+                "user": os.getenv("DB_USER"),
+                "password": os.getenv("DB_PASSWORD"),
+            }
+        else:
+            self.db_config = db_config
         self.dim = dim
         self.index = faiss.IndexFlatL2(self.dim)
         self.names_map = {}

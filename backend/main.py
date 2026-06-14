@@ -1,3 +1,42 @@
+import sys
+import os
+
+# Limit CPU threads to prevent CPU spikes and supervisor container kills
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
+# Disable tqdm progress bars globally to avoid stdout/stderr flush crashes on Windows background tasks
+os.environ["TQDM_DISABLE"] = "1"
+os.environ["DISABLE_TQDM"] = "1"
+
+# Patch stdout and stderr to ignore Errno 22 (invalid argument) when writing/flushing in background redirected streams
+for stream in (sys.stdout, sys.stderr):
+    if stream is not None:
+        original_flush = getattr(stream, "flush", None)
+        if original_flush:
+            def make_safe_flush(orig):
+                def safe_flush(*args, **kwargs):
+                    try:
+                        return orig(*args, **kwargs)
+                    except Exception:
+                        pass
+                return safe_flush
+            stream.flush = make_safe_flush(original_flush)
+
+        original_write = getattr(stream, "write", None)
+        if original_write:
+            def make_safe_write(orig):
+                def safe_write(*args, **kwargs):
+                    try:
+                        return orig(*args, **kwargs)
+                    except Exception:
+                        return 0
+                return safe_write
+            stream.write = make_safe_write(original_write)
+
 import asyncio
 import logging
 from contextlib import asynccontextmanager
@@ -16,6 +55,8 @@ from camera_ingestion.routers.stream import stream_router
 from attendance.routers.attendance import attendance_router
 from subscription.routers.subscription import subscription_router
 from subscription.models.license import LicenseInfo
+from search.routers.search import search_router
+from summarization.routers.summarization import summarization_router
 
 from database import get_db
 from minio import Minio
@@ -31,8 +72,26 @@ async def lifespan(app: FastAPI):
              and the RabbitMQ attendance consumer as a background thread.
     Shutdown: cancels them cleanly.
     """
+    # Ensure database tables are created once at startup
+    from database import engine, Base
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
     async for _ in get_db():
         break
+
+    # ── Clear stale recording status keys from Redis ─────────────────────────
+    try:
+        import redis
+        from config import Config
+        r = redis.Redis(host=Config.REDIS_HOST, port=Config.REDIS_PORT, db=0)
+        rec_keys = r.keys("recording:status:*")
+        if rec_keys:
+            r.delete(*rec_keys)
+            print(f"[Lifespan] Cleared {len(rec_keys)} stale recording status keys from Redis.")
+    except Exception as e:
+        print(f"[Lifespan] Failed to clear stale recording keys: {e}")
+
 
     import threading
     from kombu import Connection
@@ -63,10 +122,14 @@ async def lifespan(app: FastAPI):
                     secret_key=os.getenv("MINIO_ROOT_PASSWORD", "minioadmin"),
                     secure=False,
                 )
-                bucket_name = "employee-pictures"
-                
-                if minio_client.bucket_exists(bucket_name):
-                    import json
+                import json
+
+                # Buckets that need public-read access for the browser
+                public_read_buckets = ["employee-pictures", "camera-summaries"]
+
+                for bucket_name in public_read_buckets:
+                    if not minio_client.bucket_exists(bucket_name):
+                        minio_client.make_bucket(bucket_name)
                     policy = {
                         "Version": "2012-10-17",
                         "Statement": [
@@ -165,6 +228,49 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+from fastapi import HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError, ResponseValidationError
+import traceback
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    import traceback
+    tb = traceback.format_exc()
+    print("REQUEST VALIDATION ERROR:", str(exc))
+    return JSONResponse(
+        status_code=422,
+        content={"detail": "Request Validation Error: " + str(exc)}
+    )
+
+@app.exception_handler(ResponseValidationError)
+async def response_validation_exception_handler(request, exc):
+    tb = traceback.format_exc()
+    print("RESPONSE VALIDATION ERROR:", str(exc))
+    try:
+        errors_str = str(exc.errors())
+    except Exception:
+        errors_str = "Unserializable errors"
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc), "errors": errors_str}
+    )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    if isinstance(exc, HTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail}
+        )
+    tb = traceback.format_exc()
+    print("GLOBAL EXCEPTION:", tb)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc), "traceback": tb}
+    )
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -183,3 +289,5 @@ app.include_router(ingestion_router)
 app.include_router(stream_router)
 app.include_router(attendance_router)
 app.include_router(subscription_router)
+app.include_router(search_router)
+app.include_router(summarization_router)

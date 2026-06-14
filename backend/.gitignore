@@ -1,9 +1,38 @@
-data/compose
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Virtual environments
+venv/
+ai/search/venv/
+
+# Environment variables
+.env
+
+# Data folders
+data/
 backend/data/
 data/compose
-venv
-pgvector
 data/*
+
+# Models
+*.pt
+*.pth
+
+# Videos / media
+*.mp4
+*.avi
+*.mov
+
+# Databases / indexes
+*.db
+*.faiss
+*.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker volumes
+pgvector

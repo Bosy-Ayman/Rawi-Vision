@@ -2,8 +2,74 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
 import { employeeAPI } from '../api/employees';
+import { cameraAPI } from '../api/cameras';
 import EmployeeAvatar from '../components/dashboard/EmployeeAvatar';
 import './AllEmployees.css';
+
+const WEEKDAYS = [
+    { label: 'M', value: 0, fullName: 'Monday' },
+    { label: 'T', value: 1, fullName: 'Tuesday' },
+    { label: 'W', value: 2, fullName: 'Wednesday' },
+    { label: 'T', value: 3, fullName: 'Thursday' },
+    { label: 'F', value: 4, fullName: 'Friday' },
+    { label: 'S', value: 5, fullName: 'Saturday' },
+    { label: 'S', value: 6, fullName: 'Sunday' }
+];
+
+const CameraMultiSelect = ({ cameras, selectedCameraIds = [], onChange }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const containerRef = React.useRef(null);
+
+    React.useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (containerRef.current && !containerRef.current.contains(event.target)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    return (
+        <div className="custom-multiselect-container" ref={containerRef}>
+            <div className="multiselect-trigger" onClick={() => setIsOpen(!isOpen)}>
+                <span>
+                    {selectedCameraIds.length === 0 
+                        ? 'No Cameras Assigned' 
+                        : `${selectedCameraIds.length} Camera(s) Selected`}
+                </span>
+                <span className="arrow" style={{ fontSize: '0.8rem', opacity: 0.7 }}>▼</span>
+            </div>
+            {isOpen && (
+                <div className="multiselect-dropdown">
+                    {cameras.length === 0 ? (
+                        <div style={{ padding: '8px', color: '#6b7280', fontSize: '0.9rem' }}>No cameras available</div>
+                    ) : (
+                        cameras.map(cam => {
+                            const isChecked = selectedCameraIds.includes(cam.id);
+                            return (
+                                <label key={cam.id} className="multiselect-item">
+                                    <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={() => {
+                                            const newIds = isChecked
+                                                ? selectedCameraIds.filter(id => id !== cam.id)
+                                                : [...selectedCameraIds, cam.id];
+                                            onChange(newIds);
+                                        }}
+                                        style={{ marginRight: '8px', cursor: 'pointer' }}
+                                    />
+                                    <span className="item-text">{cam.room} ({cam.building || 'No Location'})</span>
+                                </label>
+                            );
+                        })
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
 
 const AllEmployees = () => {
     const [employees, setEmployees] = useState([]);
@@ -17,7 +83,16 @@ const AllEmployees = () => {
     // Modal State
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [selectedEmployee, setSelectedEmployee] = useState(null);
-    const [updateForm, setUpdateForm] = useState({ first_name: '', last_name: '', role: '' });
+    const [updateForm, setUpdateForm] = useState({ 
+        first_name: '', 
+        last_name: '', 
+        role: '', 
+        assigned_camera_ids: [],
+        assigned_days: [],
+        assigned_shift_start: '',
+        assigned_shift_end: ''
+    });
+    const [cameras, setCameras] = useState([]);
     const [isUpdating, setIsUpdating] = useState(false);
     const [showDeleteModal, setShowDeleteModal] = useState(false); // Added for delete functionality
     const navigate = useNavigate(); // Keep navigate for the Add New button
@@ -29,13 +104,21 @@ const AllEmployees = () => {
             setIsLoading(false);
         } catch (err) {
             console.error("Failed to fetch employees:", err);
-            // Optionally set an error state here if needed for display
             setIsLoading(false);
         }
     };
 
     useEffect(() => {
         fetchEmployees();
+        const fetchCameras = async () => {
+            try {
+                const list = await cameraAPI.getAllCameras();
+                setCameras(list || []);
+            } catch (err) {
+                console.error("Failed to load cameras list", err);
+            }
+        };
+        fetchCameras();
     }, []);
 
     const handleEditClick = (emp) => {
@@ -43,7 +126,11 @@ const AllEmployees = () => {
         setUpdateForm({
             first_name: emp.first_name,
             last_name: emp.last_name,
-            role: emp.role
+            role: emp.role,
+            assigned_camera_ids: emp.assigned_camera_ids || [],
+            assigned_days: emp.assigned_days || [0, 1, 2, 3, 4],
+            assigned_shift_start: emp.assigned_shift_start || '',
+            assigned_shift_end: emp.assigned_shift_end || ''
         });
         setIsEditModalOpen(true);
     };
@@ -218,7 +305,59 @@ const AllEmployees = () => {
                                         <option value="Manager">Manager</option>
                                         <option value="Security">Security</option>
                                         <option value="Staff">Staff</option>
+                                        <option value="Intern">Intern</option>
                                     </select>
+                                </div>
+                                <div className="form-group">
+                                    <label>Assigned Cameras / Rooms</label>
+                                    <CameraMultiSelect
+                                        cameras={cameras}
+                                        selectedCameraIds={updateForm.assigned_camera_ids}
+                                        onChange={(newIds) => setUpdateForm({ ...updateForm, assigned_camera_ids: newIds })}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label>Routine Days (Weekly)</label>
+                                    <div className="days-selector">
+                                        {WEEKDAYS.map(day => {
+                                            const isSelected = (updateForm.assigned_days || []).includes(day.value);
+                                            return (
+                                                <button
+                                                    key={day.value}
+                                                    type="button"
+                                                    className={`day-pill ${isSelected ? 'active' : ''}`}
+                                                    onClick={() => {
+                                                        const currentDays = updateForm.assigned_days || [];
+                                                        const newDays = isSelected
+                                                            ? currentDays.filter(d => d !== day.value)
+                                                            : [...currentDays, day.value];
+                                                        setUpdateForm({ ...updateForm, assigned_days: newDays });
+                                                    }}
+                                                    title={day.fullName}
+                                                >
+                                                    {day.label}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                    <div className="form-group">
+                                        <label>Shift Start Time</label>
+                                        <input
+                                            type="time"
+                                            value={updateForm.assigned_shift_start || ''}
+                                            onChange={(e) => setUpdateForm({ ...updateForm, assigned_shift_start: e.target.value })}
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Shift End Time</label>
+                                        <input
+                                            type="time"
+                                            value={updateForm.assigned_shift_end || ''}
+                                            onChange={(e) => setUpdateForm({ ...updateForm, assigned_shift_end: e.target.value })}
+                                        />
+                                    </div>
                                 </div>
                                 <div className="modal-actions">
                                     <button type="button" className="btn-cancel" onClick={() => setIsEditModalOpen(false)}>Cancel</button>

@@ -11,20 +11,20 @@
 
 .onboarding-header h2 {
     font-size: 1.8rem;
-    color: #111827;
+    color: var(--text-main);
     margin-bottom: 0.5rem;
 }
 
 .onboarding-header p {
-    color: #6b7280;
+    color: var(--text-muted);
     font-size: 1rem;
 }
 
 .camera-onboarding-card {
-    background: white;
-    border-radius: 12px;
+    background: var(--bg-surface);
+    border-radius: var(--radius-lg);
     padding: 2rem;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-md);
     border: 1px solid #e5e7eb;
 }
 
@@ -50,16 +50,16 @@
 .form-group input {
     padding: 0.75rem;
     border: 1px solid #d1d5db;
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     font-size: 0.95rem;
     outline: none;
     transition: border-color 0.2s;
-    background: white;
+    background: var(--bg-surface);
 }
 
 .form-group input:focus {
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px var(--primary-light);
 }
 
 .onboarding-actions {
@@ -69,11 +69,11 @@
 }
 
 .btn-submit {
-    background: #3b82f6;
-    color: white;
+    background: var(--primary);
+    color: var(--bg-surface);
     border: none;
     padding: 0.75rem 2rem;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
@@ -81,7 +81,7 @@
 }
 
 .btn-submit:hover {
-    background: #2563eb;
+    background: var(--primary-hover);
     transform: translateY(-1px);
     box-shadow: 0 6px 8px rgba(59, 130, 246, 0.4);
 }
@@ -94,7 +94,7 @@
 
 .status-message {
     padding: 1rem;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     margin-bottom: 2rem;
     font-weight: 500;
 }

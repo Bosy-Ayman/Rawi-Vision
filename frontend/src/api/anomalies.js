@@ -12,6 +12,25 @@ export const anomalyAPI = {
         return await apiClient(`/anomalies/${id}`);
     },
 
+    deleteAnomaly: async (id) => {
+        return await apiClient(`/anomalies/remove-anomaly/${id}`, {
+            method: 'DELETE'
+        });
+    },
+
+    bulkDelete: async (ids) => {
+        return await apiClient(`/anomalies/bulk-remove`, {
+            method: 'POST',
+            body: JSON.stringify({ ids })
+        });
+    },
+
+    deleteAll: async () => {
+        return await apiClient(`/anomalies/remove-all`, {
+            method: 'DELETE'
+        });
+    },
+
     startAnomaly: async () => {
         return await apiClient('/anomalies/start');
     },
