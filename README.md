@@ -6,7 +6,7 @@
 
 Video surveillance systems capture massive amounts of footage daily, making manual review inefficient. **Rawi Vision** is a comprehensive **Real-time Video Analysis Platform** designed to automate the extraction of meaningful insights from surveillance feeds.
 
-By integrating **Face Recognition**, **Video Summarization**, and **Anomaly Detection**, the platform enhances situational awareness, tracks employee attendance/productivity, and detects suspicious behavior automatically. The system features a unified dashboard for real-time alerts and analytical visualization.
+By integrating **Face Recognition**, **Smart Search**, **Video Summarization**, and **Anomaly Detection**, the platform enhances situational awareness, tracks employee attendance/productivity, and detects suspicious behavior automatically. The system features a unified dashboard for real-time alerts and analytical visualization.
 
 ---
 
