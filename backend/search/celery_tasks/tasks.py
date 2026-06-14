@@ -76,6 +76,32 @@ def get_redis_client():
         decode_responses=True
     )
 
+def faststart_mp4(input_path: str) -> str:
+    """
+    Runs ffmpeg -movflags +faststart on input_path so the moov atom is at
+    the beginning of the file. Browsers require this to play videos without
+    downloading the entire file first.
+    Returns the path to the fixed file (replaces input in-place).
+    """
+    import subprocess, shutil
+    ffmpeg_path = shutil.which("ffmpeg") or "ffmpeg"
+    fixed_path = input_path + "_faststart.mp4"
+    try:
+        result = subprocess.run(
+            [ffmpeg_path, "-y", "-i", input_path,
+             "-vcodec", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+             fixed_path],
+            capture_output=True, text=True, timeout=120
+        )
+        if result.returncode == 0 and os.path.exists(fixed_path):
+            os.replace(fixed_path, input_path)
+            print(f"[faststart] moov atom moved to front: {input_path}")
+        else:
+            print(f"[faststart] Failed: {result.stderr}")
+    except Exception as e:
+        print(f"[faststart] Error running ffmpeg: {e}")
+    return input_path
+
 
 # ----------------------------------------------------------------------
 # Queue routing — all three tasks go through the default "celery" queue
@@ -698,13 +724,13 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
 
             chunk_id = str(uuid.uuid4())
             chunk_timestamp = int(time.time())
-            chunk_filename = f"{camera_id}_{chunk_timestamp}.webm"
+            chunk_filename = f"{camera_id}_{chunk_timestamp}.mp4"
             storage_path = f"{camera_id}/{chunk_filename}"
 
-            with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp_file:
+            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_file:
                 tmp_path = tmp_file.name
 
-            fourcc = cv2.VideoWriter_fourcc(*"VP80")
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
             out_writer = cv2.VideoWriter(tmp_path, fourcc, fps, (width, height))
 
             chunk_start = time.time()
@@ -796,13 +822,15 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
                 except Exception:
                     pass
                 continue
+                
+            faststart_mp4(tmp_path)
 
             print(f"[RECORD] Uploading chunk to MinIO: {storage_path} ({frames_in_chunk} frames)")
             minio.fput_object(
                 bucket_name="camera-archive-videos",
                 object_name=storage_path,
                 file_path=tmp_path,
-                content_type="video/webm"
+                content_type="video/mp4"
             )
 
             create_indexed_video_record(
