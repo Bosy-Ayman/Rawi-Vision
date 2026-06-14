@@ -65,7 +65,51 @@ async def list_summaries(db: AsyncSession = Depends(get_db)):
     stmt = select(VideoSummary).order_by(VideoSummary.date_created.desc())
     result = await db.execute(stmt)
     summaries = result.scalars().all()
-    return summaries
+    
+    valid_summaries = []
+    minio = _get_minio()
+    
+    for summary in summaries:
+        # Check if the summary is marked as completed and has a path
+        if summary.status == "completed" and summary.summary_storage_path:
+            try:
+                minio.stat_object("camera-summaries", summary.summary_storage_path)
+                valid_summaries.append(summary)
+            except Exception as e:
+                # If the file doesn't exist in MinIO anymore, delete from DB
+                err_str = str(e).lower()
+                if "no such key" in err_str or "nosuchkey" in err_str or "does not exist" in err_str or "404" in err_str:
+                    await db.delete(summary)
+                    await db.commit()
+                else:
+                    valid_summaries.append(summary) # Keep if it's another error
+        else:
+            # Pending or processing or failed without a path
+            valid_summaries.append(summary)
+            
+    return valid_summaries
+
+@summarization_router.delete("/{summary_id}")
+async def delete_summary(summary_id: str, db: AsyncSession = Depends(get_db)):
+    """Deletes a video summary from the database and MinIO."""
+    stmt = select(VideoSummary).filter(VideoSummary.id == summary_id)
+    result = await db.execute(stmt)
+    summary = result.scalars().first()
+    
+    if not summary:
+        raise HTTPException(status_code=404, detail="Summary not found")
+        
+    minio = _get_minio()
+    if summary.summary_storage_path:
+        try:
+            minio.remove_object("camera-summaries", summary.summary_storage_path)
+        except Exception as e:
+            pass # Ignore if already deleted from MinIO
+            
+    await db.delete(summary)
+    await db.commit()
+    
+    return {"message": "Summary deleted successfully"}
 
 @summarization_router.post("/settings/auto")
 async def update_auto_summarize_settings(settings: AutoSummarizeSettings):

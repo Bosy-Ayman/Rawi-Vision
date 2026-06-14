@@ -25,6 +25,7 @@ const Summarization = () => {
   const [loading, setLoading]           = useState(true);
   const [activeVideo, setActiveVideo]   = useState(null); // { url, title }
   const [notification, setNotification] = useState(null);
+  const [searchQuery, setSearchQuery]   = useState('');
   const pollTimers = useRef({});
 
   const showToast = (type, title, message) => {
@@ -123,6 +124,21 @@ const Summarization = () => {
     }
   };
 
+  const handleDeleteSummary = async (summaryId, videoId) => {
+    if (!window.confirm("Are you sure you want to delete this summary?")) return;
+    try {
+      await summarizationApi.deleteSummary(summaryId);
+      setSummaries(prev => {
+        const next = { ...prev };
+        delete next[videoId];
+        return next;
+      });
+      showToast('success', 'Deleted', 'Summary was successfully deleted.');
+    } catch (err) {
+      showToast('error', 'Error', err?.detail || 'Failed to delete summary');
+    }
+  };
+
   const statusClass = s => ({ completed: 'status-completed', failed: 'status-failed', processing: 'status-processing' }[s] || 'status-pending');
 
   /* ---------- render ---------- */
@@ -149,6 +165,28 @@ const Summarization = () => {
             <p className="sum-subtitle">
               AI condenses hours of footage into concise highlight reels
             </p>
+          </div>
+          
+          <div className="sum-header-search">
+            <div className="search-input-wrapper">
+              <span className="search-icon">🔍</span>
+              <input
+                type="text"
+                placeholder="Search videos..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="sum-search-input"
+                style={{
+                  padding: '8px 12px 8px 32px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-card)',
+                  color: 'var(--text-primary)',
+                  width: '100%',
+                  minWidth: '200px'
+                }}
+              />
+            </div>
           </div>
           <div className="sum-auto-toggle">
             <div className="toggle-label-group">
@@ -183,7 +221,16 @@ const Summarization = () => {
           </div>
         ) : (
           <div className="sum-grid">
-            {videos.map(video => {
+            {videos.filter(v => {
+              const query = searchQuery.toLowerCase();
+              const summary = summaries[v.video_id];
+              const status = summary ? summary.status.toLowerCase() : 'unsummarized';
+              
+              return (v.filename || '').toLowerCase().includes(query) ||
+                     (v.camera_room || '').toLowerCase().includes(query) ||
+                     (v.camera_number || '').toLowerCase().includes(query) ||
+                     status.includes(query);
+            }).map(video => {
               const summary     = summaries[video.video_id];
               const prog        = summary ? progress[summary.id] : null;
               const pct         = prog?.percent ?? 0;
@@ -269,12 +316,23 @@ const Summarization = () => {
                         <span>⚙</span> Generate Summary
                       </button>
                     ) : isCompleted ? (
-                      <button
-                        className="sum-btn sum-btn--watch"
-                        onClick={() => setActiveVideo({ url: videoUrl, title: video.filename })}
-                      >
-                        <span>⛶</span> Full Screen
-                      </button>
+                      <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                        <button
+                          className="sum-btn sum-btn--watch"
+                          style={{ flex: 1 }}
+                          onClick={() => setActiveVideo({ url: videoUrl, title: video.filename })}
+                        >
+                          <span>⛶</span> Full Screen
+                        </button>
+                        <button
+                          className="sum-btn"
+                          style={{ backgroundColor: 'var(--bg-card-hover)', color: 'var(--text-secondary)', padding: '0 12px' }}
+                          onClick={() => handleDeleteSummary(summary.id, video.video_id)}
+                          title="Delete Summary"
+                        >
+                          <span>🗑️</span>
+                        </button>
+                      </div>
                     ) : (
                       <button className="sum-btn sum-btn--disabled" disabled>
                         <span>⏳</span> {STAGE_LABELS[stage] || 'Working…'}

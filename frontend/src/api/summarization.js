@@ -15,6 +15,13 @@ export const summarizationApi = {
     });
   },
 
+  // Delete a summary
+  deleteSummary: async (summaryId) => {
+    return apiClient(`/api/summarization/${summaryId}`, {
+      method: 'DELETE'
+    });
+  },
+
   // Get auto-summarize settings
   getAutoSettings: async () => {
     return apiClient('/api/summarization/settings/auto', {
