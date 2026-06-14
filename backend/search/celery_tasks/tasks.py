@@ -76,32 +76,6 @@ def get_redis_client():
         decode_responses=True
     )
 
-def faststart_mp4(input_path: str) -> str:
-    """
-    Runs ffmpeg -movflags +faststart on input_path so the moov atom is at
-    the beginning of the file. Browsers require this to play videos without
-    downloading the entire file first.
-    Returns the path to the fixed file (replaces input in-place).
-    """
-    import subprocess, shutil
-    ffmpeg_path = shutil.which("ffmpeg") or "ffmpeg"
-    fixed_path = input_path + "_faststart.mp4"
-    try:
-        result = subprocess.run(
-            [ffmpeg_path, "-y", "-i", input_path,
-             "-vcodec", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-             fixed_path],
-            capture_output=True, text=True, timeout=120
-        )
-        if result.returncode == 0 and os.path.exists(fixed_path):
-            os.replace(fixed_path, input_path)
-            print(f"[faststart] moov atom moved to front: {input_path}")
-        else:
-            print(f"[faststart] Failed: {result.stderr}")
-    except Exception as e:
-        print(f"[faststart] Error running ffmpeg: {e}")
-    return input_path
-
 
 # ----------------------------------------------------------------------
 # Queue routing — all three tasks go through the default "celery" queue
@@ -489,9 +463,6 @@ def extract_clip_task(self, video_id: str, storage_path: str, frame_number: int,
         scale_x = target_width / width if width > 0 else 1
         scale_y = target_height / height if height > 0 else 1
 
-        past_frames = [f for f in frame_bbox_map.keys() if f <= start_frame]
-        last_drawn_bboxes = frame_bbox_map[max(past_frames)] if past_frames else []
-
         while current_frame <= end_frame:
             ret, frame = cap.read()
             if not ret:
@@ -500,11 +471,9 @@ def extract_clip_task(self, video_id: str, storage_path: str, frame_number: int,
             resized_frame = cv2.resize(frame, (target_width, target_height))
 
             # Draw bounding boxes if available for this frame
-            if draw_bboxes:
-                if current_frame in frame_bbox_map:
-                    last_drawn_bboxes = frame_bbox_map[current_frame]
-                    
-                for det in last_drawn_bboxes:
+            if draw_bboxes and current_frame in frame_bbox_map:
+                face_dets = frame_bbox_map[current_frame]
+                for det in face_dets:
                     try:
                         x1, y1, x2, y2 = int(det["x1"] * scale_x), int(det["y1"] * scale_y), int(det["x2"] * scale_x), int(det["y2"] * scale_y)
                         name = det.get("name", "Unknown")
@@ -724,13 +693,13 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
 
             chunk_id = str(uuid.uuid4())
             chunk_timestamp = int(time.time())
-            chunk_filename = f"{camera_id}_{chunk_timestamp}.mp4"
+            chunk_filename = f"{camera_id}_{chunk_timestamp}.webm"
             storage_path = f"{camera_id}/{chunk_filename}"
 
-            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_file:
+            with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp_file:
                 tmp_path = tmp_file.name
 
-            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            fourcc = cv2.VideoWriter_fourcc(*"VP80")
             out_writer = cv2.VideoWriter(tmp_path, fourcc, fps, (width, height))
 
             chunk_start = time.time()
@@ -822,15 +791,13 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
                 except Exception:
                     pass
                 continue
-                
-            faststart_mp4(tmp_path)
 
             print(f"[RECORD] Uploading chunk to MinIO: {storage_path} ({frames_in_chunk} frames)")
             minio.fput_object(
                 bucket_name="camera-archive-videos",
                 object_name=storage_path,
                 file_path=tmp_path,
-                content_type="video/mp4"
+                content_type="video/webm"
             )
 
             create_indexed_video_record(

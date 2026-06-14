@@ -335,7 +335,7 @@ const Summarization = () => {
                         </button>
                         <button
                           className="sum-btn"
-                          style={{ backgroundColor: 'var(--bg-card-hover)', color: 'var(--text-secondary)', padding: '0 12px' }}
+                          style={{ backgroundColor: 'var(--bg-card-hover)', color: 'var(--text-secondary)', minWidth: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                           onClick={() => handleDeleteVideo(video.video_id)}
                           title="Delete Video"
                         >
@@ -360,7 +360,7 @@ const Summarization = () => {
                         </button>
                         <button
                           className="sum-btn"
-                          style={{ backgroundColor: 'var(--bg-card-hover)', color: 'var(--text-secondary)', padding: '0 12px' }}
+                          style={{ backgroundColor: 'var(--bg-card-hover)', color: 'var(--text-secondary)', minWidth: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                           onClick={() => handleDeleteVideo(video.video_id)}
                           title="Delete Video"
                         >
@@ -374,7 +374,7 @@ const Summarization = () => {
                         </button>
                         <button
                           className="sum-btn"
-                          style={{ backgroundColor: 'var(--bg-card-hover)', color: 'var(--text-secondary)', padding: '0 12px' }}
+                          style={{ backgroundColor: 'var(--bg-card-hover)', color: 'var(--text-secondary)', minWidth: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                           onClick={() => handleDeleteVideo(video.video_id)}
                           title="Delete Video"
                         >
