@@ -616,9 +616,9 @@ async def get_clip_status(video_id: uuid.UUID, frame_number: int, timestamp: flo
 
 @search_router.get("/video/{video_id}/stream")
 async def stream_full_video(video_id: uuid.UUID, request: Request, db: db_dependency):
-    """Redirects to a presigned MinIO URL to stream the full video directly to the browser, adjusting host dynamically."""
-    from fastapi.responses import RedirectResponse
-    from datetime import timedelta
+    """Streams the original video from MinIO directly through FastAPI supporting Range Requests."""
+    from fastapi.responses import StreamingResponse, Response
+    import re
     
     minio = get_minio()
     stmt = select(IndexedVideo).filter(IndexedVideo.id == video_id)
@@ -629,17 +629,74 @@ async def stream_full_video(video_id: uuid.UUID, request: Request, db: db_depend
         raise HTTPException(status_code=404, detail="Video not found")
         
     try:
-        url = minio.presigned_get_object(
-            "camera-archive-videos", 
-            video.storage_path, 
-            expires=timedelta(hours=1)
+        storage_path = video.storage_path
+        
+        # 1. Get object metadata (size)
+        stat = minio.stat_object("camera-archive-videos", storage_path)
+        file_size = stat.size
+
+        # Detect media type from file extension
+        if storage_path.endswith(".webm"):
+            media_type = "video/webm"
+            ext = ".webm"
+        else:
+            media_type = "video/mp4"
+            ext = ".mp4"
+
+        # 2. Parse the Range header
+        range_header = request.headers.get("range")
+
+        start = 0
+        end = file_size - 1
+
+        if range_header:
+            match = re.match(r"bytes=(\d+)-(\d*)", range_header)
+            if match:
+                start = int(match.group(1))
+                if match.group(2):
+                    end = int(match.group(2))
+
+        # Bound check
+        if start >= file_size:
+            raise HTTPException(status_code=416, detail="Requested Range Not Satisfiable")
+        if end >= file_size:
+            end = file_size - 1
+
+        content_length = end - start + 1
+
+        # 3. Request only the specific byte range from MinIO
+        response = minio.get_object(
+            "camera-archive-videos",
+            storage_path,
+            offset=start,
+            length=content_length
         )
-        # Rewrite the url host to use the request host (to support range requests on external devices)
-        request_host = request.url.hostname or "127.0.0.1"
-        url = url.replace("127.0.0.1", request_host).replace("localhost", request_host)
-        return RedirectResponse(url)
+
+        def iter_file():
+            try:
+                for chunk in response.stream(32 * 1024):
+                    yield chunk
+            finally:
+                response.close()
+                response.release_conn()
+
+        headers = {
+            "Content-Disposition": f"inline; filename={video_id}_original{ext}",
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-cache",
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Content-Length": str(content_length),
+            "Access-Control-Allow-Origin": "*",
+        }
+
+        return StreamingResponse(
+            iter_file(),
+            status_code=206,
+            media_type=media_type,
+            headers=headers
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating stream URL: {e}")
+        raise HTTPException(status_code=500, detail=f"Error generating stream: {e}")
 
 
 @search_router.get("/video/{video_id}/frames", response_model=List[VideoFrameResponse])
