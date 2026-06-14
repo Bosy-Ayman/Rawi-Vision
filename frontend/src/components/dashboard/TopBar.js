@@ -90,17 +90,17 @@ const TopBar = ({ title }) => {
                             position: 'absolute',
                             top: '45px',
                             right: '0',
-                            width: '340px',
-                            background: '#1e293b',
-                            border: '1px solid #475569',
+                            width: '360px',
+                            background: '#ffffff',
+                            border: '1px solid #e2e8f0',
                             borderRadius: '12px',
-                            boxShadow: '0 10px 15px -3px rgba(0,0,0,0.3)',
+                            boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
                             zIndex: 1000,
                             padding: '16px',
                             fontFamily: 'Inter, sans-serif'
                         }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #334155', paddingBottom: '8px' }}>
-                                <h4 style={{ margin: 0, color: '#f8fafc', fontSize: '14px', fontWeight: '600' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #f1f5f9', paddingBottom: '8px' }}>
+                                <h4 style={{ margin: 0, color: '#0f172a', fontSize: '15px', fontWeight: '700' }}>
                                     Recent Notifications
                                 </h4>
                                 {anomalies.length > 0 && (
@@ -120,30 +120,31 @@ const TopBar = ({ title }) => {
                             
                             <div style={{ maxHeight: '280px', overflowY: 'auto' }}>
                                 {anomalies.length === 0 ? (
-                                    <p style={{ color: '#94a3b8', fontSize: '12px', margin: '12px 0', textAlign: 'center' }}>No recent alerts.</p>
+                                    <p style={{ color: '#64748b', fontSize: '13px', margin: '16px 0', textAlign: 'center' }}>No recent alerts.</p>
                                 ) : (
                                     anomalies.map(alert => (
                                         <div key={alert.id} style={{
-                                            padding: '10px 8px',
-                                            borderBottom: '1px solid #334155',
-                                            fontSize: '12px',
-                                            color: '#e2e8f0',
+                                            padding: '12px 8px',
+                                            borderBottom: '1px solid #f1f5f9',
+                                            fontSize: '13px',
+                                            color: '#334155',
                                             position: 'relative',
                                             display: 'flex',
                                             justifyContent: 'space-between',
                                             alignItems: 'flex-start',
-                                            gap: '8px'
-                                        }}>
+                                            gap: '8px',
+                                            transition: 'background-color 0.2s',
+                                        }} className="notification-item">
                                             <div style={{ flex: 1 }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                                                    <span style={{ fontSize: '11px', color: '#ffffff', background: BADGE_COLORS[alert.anomaly_type] || '#6b7280', padding: '1px 6px', borderRadius: '4px', fontWeight: 'bold', textTransform: 'uppercase' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                                                    <span style={{ fontSize: '11px', color: '#ffffff', background: BADGE_COLORS[alert.anomaly_type] || '#6b7280', padding: '2px 8px', borderRadius: '12px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                                                         {TYPE_EMOJIS[alert.anomaly_type] || '❓'} {alert.anomaly_type.replace('_', ' ')}
                                                     </span>
-                                                    <span style={{ color: '#94a3b8', fontSize: '10px' }}>
+                                                    <span style={{ color: '#94a3b8', fontSize: '11px', fontWeight: '500' }}>
                                                         {new Date(alert.detected_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                     </span>
                                                 </div>
-                                                <div style={{ color: '#cbd5e1', lineHeight: '1.4' }}>
+                                                <div style={{ color: '#475569', lineHeight: '1.5' }}>
                                                     {alert.description}
                                                 </div>
                                             </div>
@@ -153,12 +154,15 @@ const TopBar = ({ title }) => {
                                                     background: 'none',
                                                     border: 'none',
                                                     color: '#94a3b8',
-                                                    fontSize: '14px',
+                                                    fontSize: '16px',
                                                     cursor: 'pointer',
                                                     padding: '0 4px',
-                                                    lineHeight: 1
+                                                    lineHeight: 1,
+                                                    transition: 'color 0.2s'
                                                 }}
                                                 title="Dismiss notification"
+                                                onMouseOver={(e) => e.target.style.color = '#ef4444'}
+                                                onMouseOut={(e) => e.target.style.color = '#94a3b8'}
                                             >
                                                 ×
                                             </button>
@@ -167,10 +171,12 @@ const TopBar = ({ title }) => {
                                 )}
                             </div>
 
-                            <div style={{ textAlign: 'center', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #334155' }}>
+                            <div style={{ textAlign: 'center', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #f1f5f9' }}>
                                 <button 
                                     onClick={() => { navigate('/dashboard/anomalies'); setShowDropdown(false); }}
-                                    style={{ background: 'none', border: 'none', color: '#3b82f6', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}
+                                    style={{ background: 'none', border: 'none', color: '#3b82f6', fontSize: '13px', cursor: 'pointer', fontWeight: '600', transition: 'color 0.2s' }}
+                                    onMouseOver={(e) => e.target.style.color = '#2563eb'}
+                                    onMouseOut={(e) => e.target.style.color = '#3b82f6'}
                                 >
                                     View All Alerts History →
                                 </button>

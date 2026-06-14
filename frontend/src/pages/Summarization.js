@@ -139,6 +139,17 @@ const Summarization = () => {
     }
   };
 
+  const handleDeleteVideo = async (videoId) => {
+    if (!window.confirm("Are you sure you want to delete this original video? This action is permanent.")) return;
+    try {
+      await searchAPI.deleteVideo(videoId);
+      setVideos(prev => prev.filter(v => v.video_id !== videoId));
+      showToast('success', 'Deleted', 'Original video deleted.');
+    } catch (err) {
+      showToast('error', 'Error', err?.detail || 'Failed to delete video');
+    }
+  };
+
   const statusClass = s => ({ completed: 'status-completed', failed: 'status-failed', processing: 'status-processing' }[s] || 'status-pending');
 
   /* ---------- render ---------- */
@@ -320,7 +331,15 @@ const Summarization = () => {
                           style={{ flex: 1 }}
                           onClick={() => setActiveVideo({ url: `${BASE_URL}/api/search/video/${video.video_id}/stream`, title: video.filename })}
                         >
-                          <span>▶</span> Play Original
+                          <span>▶</span> Play
+                        </button>
+                        <button
+                          className="sum-btn"
+                          style={{ backgroundColor: 'var(--bg-card-hover)', color: 'var(--text-secondary)', padding: '0 12px' }}
+                          onClick={() => handleDeleteVideo(video.video_id)}
+                          title="Delete Video"
+                        >
+                          <span>🗑️</span>
                         </button>
                       </div>
                     ) : isCompleted ? (
@@ -330,13 +349,20 @@ const Summarization = () => {
                           style={{ flex: 1 }}
                           onClick={() => setActiveVideo({ url: videoUrl, title: video.filename })}
                         >
-                          <span>⛶</span> Full Screen
+                          <span>⛶</span> Summary
+                        </button>
+                        <button
+                          className="sum-btn sum-btn--watch"
+                          style={{ flex: 1 }}
+                          onClick={() => setActiveVideo({ url: `${BASE_URL}/api/search/video/${video.video_id}/stream`, title: video.filename })}
+                        >
+                          <span>▶</span> Original
                         </button>
                         <button
                           className="sum-btn"
                           style={{ backgroundColor: 'var(--bg-card-hover)', color: 'var(--text-secondary)', padding: '0 12px' }}
-                          onClick={() => handleDeleteSummary(summary.id, video.video_id)}
-                          title="Delete Summary"
+                          onClick={() => handleDeleteVideo(video.video_id)}
+                          title="Delete Video"
                         >
                           <span>🗑️</span>
                         </button>
@@ -347,11 +373,12 @@ const Summarization = () => {
                           <span>⏳</span> {STAGE_LABELS[stage] || 'Working…'}
                         </button>
                         <button
-                          className="sum-btn sum-btn--watch"
-                          style={{ flex: 1 }}
-                          onClick={() => setActiveVideo({ url: `${BASE_URL}/api/search/video/${video.video_id}/stream`, title: video.filename })}
+                          className="sum-btn"
+                          style={{ backgroundColor: 'var(--bg-card-hover)', color: 'var(--text-secondary)', padding: '0 12px' }}
+                          onClick={() => handleDeleteVideo(video.video_id)}
+                          title="Delete Video"
                         >
-                          <span>▶</span> Play Original
+                          <span>🗑️</span>
                         </button>
                       </div>
                     )}
