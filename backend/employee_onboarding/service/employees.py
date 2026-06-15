@@ -31,7 +31,10 @@ class EmployeeService:
                 # Save the first uploaded picture as the profile_image_url
                 if not new_employee.profile_image_url:
                     # Construct URL directly to Minio
-                    minio_endpoint = self.object_storage.minio_client._endpoint_link
+                    import os
+                    minio_endpoint = os.getenv("MINIO_SERVER_URL", "http://127.0.0.1:9000")
+                    if not minio_endpoint.startswith("http"):
+                        minio_endpoint = f"http://{minio_endpoint}"
                     new_employee.profile_image_url = f"{minio_endpoint}/{self.bucket_name}/{new_employee.id}/{picture.filename}"
 
             await self.repository.db.commit()

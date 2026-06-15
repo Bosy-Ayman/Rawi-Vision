@@ -94,6 +94,7 @@ const AllEmployees = () => {
     });
     const [cameras, setCameras] = useState([]);
     const [isUpdating, setIsUpdating] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
     const [showDeleteModal, setShowDeleteModal] = useState(false); // Added for delete functionality
     const navigate = useNavigate(); // Keep navigate for the Add New button
 
@@ -148,9 +149,24 @@ const AllEmployees = () => {
             }
         } catch (error) {
             console.error('Update error:', error);
-            alert('Error connecting to server');
+            alert('An error occurred during update');
         } finally {
             setIsUpdating(false);
+        }
+    };
+
+    const handleDeleteClick = async () => {
+        if (!window.confirm("Are you sure you want to delete this employee? This action cannot be undone.")) return;
+        setIsDeleting(true);
+        try {
+            const response = await employeeAPI.deleteEmployee(selectedEmployee.id);
+            setIsEditModalOpen(false);
+            fetchEmployees();
+        } catch (err) {
+            console.error("Delete error:", err);
+            alert("An error occurred while deleting the employee.");
+        } finally {
+            setIsDeleting(false);
         }
     };
 
@@ -359,11 +375,16 @@ const AllEmployees = () => {
                                         />
                                     </div>
                                 </div>
-                                <div className="modal-actions">
-                                    <button type="button" className="btn-cancel" onClick={() => setIsEditModalOpen(false)}>Cancel</button>
-                                    <button type="submit" className="btn-save" disabled={isUpdating}>
-                                        {isUpdating ? 'Saving...' : 'Save Changes'}
+                                <div className="modal-actions" style={{ justifyContent: 'space-between' }}>
+                                    <button type="button" className="btn-cancel" style={{ color: '#dc3545', borderColor: '#dc3545' }} onClick={handleDeleteClick} disabled={isDeleting}>
+                                        {isDeleting ? 'Deleting...' : 'Delete Employee'}
                                     </button>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        <button type="button" className="btn-cancel" onClick={() => setIsEditModalOpen(false)}>Cancel</button>
+                                        <button type="submit" className="btn-save" disabled={isUpdating}>
+                                            {isUpdating ? 'Saving...' : 'Save Changes'}
+                                        </button>
+                                    </div>
                                 </div>
                             </form>
                         </div>

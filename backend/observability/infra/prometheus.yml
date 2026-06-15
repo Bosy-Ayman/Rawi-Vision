@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "rawivision_backend"
+    metrics_path: "/metrics"
+    static_configs:
+      # host.docker.internal works on Docker Desktop (Windows/Mac) to reach the host's localhost
+      - targets: ["host.docker.internal:8002"]

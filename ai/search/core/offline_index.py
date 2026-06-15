@@ -382,13 +382,17 @@ class FrameEncoder:
                                 emb = self.resnet(face_tensor).cpu().numpy().squeeze()
                             # search_face returns (name, emp_id, dist)
                             name, emp_id, dist = self.face_manager.search_face(emb)
-                            if dist < 1.0 and name != "Unknown":
-                                # Store each individual detection with its emp_id and confidence
-                                face_detections.append({
-                                    "emp_id": str(emp_id),
-                                    "name": name,
-                                    "confidence": float(1.0 - dist)  # invert distance -> confidence
-                                })
+                            # Store ALL face detections, including unknown ones
+                            face_detections.append({
+                                "emp_id": str(emp_id),
+                                "name": name,
+                                "confidence": float(1.0 - dist),  # invert distance -> confidence
+                                "x1": int(x1),
+                                "y1": int(y1),
+                                "x2": int(x2),
+                                "y2": int(y2),
+                                "is_unknown": name == "Unknown"
+                            })
             except Exception as face_err:
                 print(f"[WARN] Face Recognition failed during frame encoding: {face_err}")
 

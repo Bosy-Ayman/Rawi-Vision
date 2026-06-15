@@ -12,6 +12,7 @@ import EmployeeDetails from './pages/EmployeeDetails';
 import EmployeeInsights from './pages/EmployeeInsights';
 import SystemUserManagement from './pages/SystemUserManagement';
 import Settings from './pages/Settings';
+import SystemHealth from './pages/SystemHealth';
 import CustomCursor from './components/CustomCursor';
 import DashboardMain from './pages/DashboardMain';
 
@@ -53,6 +54,7 @@ function App() {
 
             <Route path="/admin/system-users" element={<SubscriptionGuard><SystemUserManagement /></SubscriptionGuard>} />
             <Route path="/dashboard/settings" element={<SubscriptionGuard><Settings /></SubscriptionGuard>} />
+            <Route path="/dashboard/system-health" element={<SubscriptionGuard><SystemHealth /></SubscriptionGuard>} />
 
             {/* Fallback for demo purposes */}
             <Route path="/dashboard/*" element={<SubscriptionGuard><VideoFeedPage /></SubscriptionGuard>} />

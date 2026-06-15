@@ -48,6 +48,12 @@ async def receive_subscription_webhook(
     try:
         logger.info(f"Received subscription webhook update: {payload.model_dump()}")
         
+        try:
+            from observability.metrics import SUBSCRIPTION_WEBHOOK_RECEIVED
+            SUBSCRIPTION_WEBHOOK_RECEIVED.labels(status=payload.status).inc()
+        except ImportError:
+            pass
+            
         # 1. Signature Verification Placeholder
         # In production, check: HMAC-SHA256 signature using WEBHOOK_SECRET_KEY
         

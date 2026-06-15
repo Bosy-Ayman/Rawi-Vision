@@ -73,6 +73,12 @@ class AuthService:
         access_token = _create_access_token(token_data)
         refresh_token = _create_refresh_token(token_data)
 
+        try:
+            from observability.metrics import AUTH_LOGIN_COUNTER
+            AUTH_LOGIN_COUNTER.labels(status="success").inc()
+        except ImportError:
+            pass
+
         return {
             "access_token": access_token,
             "refresh_token": refresh_token,
