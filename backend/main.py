@@ -1,6 +1,6 @@
 import sys
 import os
-
+from contact import router as contact_router   # direct import from same folder
 # Limit CPU threads to prevent CPU spikes and supervisor container kills
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
@@ -293,3 +293,4 @@ app.include_router(attendance_router)
 app.include_router(subscription_router)
 app.include_router(search_router)
 app.include_router(summarization_router)
+app.include_router(contact_router, prefix="/api")
