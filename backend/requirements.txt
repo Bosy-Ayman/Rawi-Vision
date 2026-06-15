@@ -254,6 +254,8 @@ pyclipper==1.4.0
 pycparser==3.0
 pycryptodome==3.23.0
 pydantic==2.12.5
+prometheus-client==0.20.0
+prometheus-fastapi-instrumentator==7.0.0
 pydantic-settings==2.14.1
 pydantic_core==2.41.5
 pydeck==0.9.1

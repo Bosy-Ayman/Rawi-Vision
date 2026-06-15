@@ -64,6 +64,12 @@ class AttendanceConsumer(ConsumerMixin):
             attendance_create = AttendanceCreate(employee_id=emp_id, camera_id=camera_id, duration_seconds=0.0)
             result = await service.create_attendance_record(attendance=attendance_create)
             print(f"[AttendanceConsumer] Service returned: {result}")
+            
+            try:
+                from observability.metrics import ATTENDANCE_RECORDS_CREATED
+                ATTENDANCE_RECORDS_CREATED.inc()
+            except ImportError:
+                pass
 
     async def _handle_left(self, emp_id: str, camera_id: str, duration_seconds: float):
         print(f"[AttendanceConsumer] Starting DB session for LEFT {emp_id} (duration: {duration_seconds}s)...")

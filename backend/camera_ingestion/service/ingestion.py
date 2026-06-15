@@ -43,6 +43,12 @@ class IngestionService:
             
             task_ids.append(task_id) 
             
+        try:
+            from observability.metrics import CAMERA_ACTIVE_STREAMS
+            CAMERA_ACTIVE_STREAMS.set(len(task_ids))
+        except ImportError:
+            pass
+            
         redis_client.set('task_ids', json.dumps(task_ids))
 
     def stop_ingestion(self):
@@ -57,3 +63,9 @@ class IngestionService:
             return
         for task_id in task_ids:
             redis_client.set(f"stop:{task_id}", 1)
+
+        try:
+            from observability.metrics import CAMERA_ACTIVE_STREAMS
+            CAMERA_ACTIVE_STREAMS.set(0)
+        except ImportError:
+            pass

@@ -75,6 +75,12 @@ class AnomalyService:
         saved = await self.repository.save_new_anomaly(anomaly_data)
         logger.info(f"Saved anomaly #{saved.id}: {saved.anomaly_type}")
 
+        try:
+            from observability.metrics import ANOMALY_DETECTED_COUNTER
+            ANOMALY_DETECTED_COUNTER.labels(camera_id=saved.camera_id, type=saved.anomaly_type).inc()
+        except ImportError:
+            pass
+
         # 3. Broadcast to all connected WebSocket clients
         from ..schemas.anomaly import AnomalyResponse
         response = AnomalyResponse.model_validate(saved)

@@ -1,17 +1,17 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from fastapi import UploadFile
 from uuid import UUID
 from datetime import datetime
 from typing import List
 
 class EmployeeBase(BaseModel):
-    first_name: str
-    last_name: str
-    role: str  # must be changed to enum later on when the roles get defined.
+    first_name: str = Field(..., min_length=2, max_length=50, pattern=r"^[A-Za-z\s\-]+$")
+    last_name: str = Field(..., min_length=2, max_length=50, pattern=r"^[A-Za-z\s\-]+$")
+    role: str = Field(..., max_length=50)
     assigned_camera_ids: List[str] | None = None
-    assigned_days: List[int] | None = None
-    assigned_shift_start: str | None = None
-    assigned_shift_end: str | None = None
+    assigned_days: List[int] | None = Field(None, description="0=Monday, 6=Sunday")
+    assigned_shift_start: str | None = Field(None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    assigned_shift_end: str | None = Field(None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 
 class EmployeeCreate(EmployeeBase):
     pass

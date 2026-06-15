@@ -28,7 +28,8 @@ const Sidebar = () => {
         location.pathname === '/dashboard/all-employees' ||
         location.pathname.startsWith('/dashboard/employee/') ||
         location.pathname === '/dashboard/camera-onboarding' ||
-        location.pathname === '/dashboard/all-cameras';
+        location.pathname === '/dashboard/all-cameras' ||
+        location.pathname === '/dashboard/system-health';
 
     // SuperAdmin Journey: system user management
     const isSuperAdminJourney = location.pathname === '/admin/system-users';
@@ -49,7 +50,8 @@ const Sidebar = () => {
         { name: 'Add Employee', icon: 'employee-insights.svg', path: '/dashboard/employee-onboarding' },
         { name: 'All Employees', icon: 'employee-insights.svg', path: '/dashboard/all-employees' },
         { name: 'Add Camera', icon: 'employee-insights.svg', path: '/dashboard/camera-onboarding' },
-        { name: 'All Cameras', icon: 'employee-insights.svg', path: '/dashboard/all-cameras' }
+        { name: 'All Cameras', icon: 'employee-insights.svg', path: '/dashboard/all-cameras' },
+        { name: 'System Health', icon: 'dashboard.svg', path: '/dashboard/system-health' }
     ];
 
     const superAdminMenuItems = [

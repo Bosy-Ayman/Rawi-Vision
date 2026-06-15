@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 from enum import Enum
@@ -15,11 +15,11 @@ class AnomalyTypeEnum(str, Enum):
 
 class AnomalyBase(BaseModel):
     anomaly_type: AnomalyTypeEnum = AnomalyTypeEnum.UNKNOWN
-    description: str
-    confidence_score: float = 0.0
-    camera_id: str = "default"
-    image_url: Optional[str] = None
-    employee_id: Optional[str] = None
+    description: str = Field(..., max_length=1000)
+    confidence_score: float = Field(0.0, ge=0.0, le=1.0)
+    camera_id: str = Field("default", max_length=100)
+    image_url: Optional[str] = Field(None, max_length=500)
+    employee_id: Optional[str] = Field(None, max_length=100)
 
 
 class AnomalyCreate(AnomalyBase):

@@ -67,6 +67,13 @@ async def create_employee(
             assigned_shift_end=assigned_shift_end
         )
         created_employee = await service.create_employee(employee=employee, employee_pictures=employee_pictures)
+        
+        try:
+            from observability.metrics import EMPLOYEE_ONBOARDING_TOTAL
+            EMPLOYEE_ONBOARDING_TOTAL.inc()
+        except ImportError:
+            pass
+            
         return created_employee
     except Exception as error:
         raise error

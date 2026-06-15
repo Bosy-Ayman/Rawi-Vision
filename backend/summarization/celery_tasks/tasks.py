@@ -270,10 +270,20 @@ def generate_video_summary_task(self, summary_id: str, video_id: str, camera_id:
                 pass
 
             print(f"[TASK] Summarization completed for {summary_id}")
+            try:
+                from observability.metrics import SUMMARIZATION_TASK_STATUS
+                SUMMARIZATION_TASK_STATUS.labels(status="completed").inc()
+            except ImportError:
+                pass
             return {"status": "completed", "summary_path": dest_object_name}
             
     except Exception as e:
         print(f"[ERROR] Summarization failed for {summary_id}: {e}")
         update_summary_status(summary_id, "failed")
         emit_progress("failed", 0)
+        try:
+            from observability.metrics import SUMMARIZATION_TASK_STATUS
+            SUMMARIZATION_TASK_STATUS.labels(status="failed").inc()
+        except ImportError:
+            pass
         raise

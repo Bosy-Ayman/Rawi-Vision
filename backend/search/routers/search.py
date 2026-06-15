@@ -235,6 +235,8 @@ async def query_search(
 
         try:
             logger.warning(">>> [query_search] Calling service.search")
+            import time
+            start_time = time.time()
             # Run semantic search + identity fusion + LLM reasoning
             search_result = await service.search(
                 db=db,
@@ -243,6 +245,12 @@ async def query_search(
                 top_k=request.top_k,
                 use_llm=request.use_llm
             )
+            duration = time.time() - start_time
+            try:
+                from observability.metrics import SEARCH_QUERY_LATENCY
+                SEARCH_QUERY_LATENCY.observe(duration)
+            except ImportError:
+                pass
             logger.warning(">>> [query_search] service.search returned successfully")
 
             # Dispatch async clip extraction tasks for each matched frame
