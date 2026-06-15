@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import '../App.css';
 import LoginModal from '../components/modals/LoginModal';
 
@@ -124,12 +125,10 @@ function LandingPage() {
                         <div className="footer-section">
                             <h4 className="footer-heading">COMPANY</h4>
                             <ul className="footer-links">
-                                <li><a href="#about">About</a></li>
-                                <li><a href="#services">Services</a></li>
-                                <li><a href="#products">Products</a></li>
-                                <li><a href="#gallery">Gallery</a></li>
-                                <li><a href="#team">Our Team</a></li>
-                                <li><a href="#contact">Contact Us</a></li>
+                            <li><Link to="/about">About</Link></li>
+                            <li><Link to="/products">Products</Link></li>
+                            <li><Link to="/team">Our Team</Link></li>
+                            <li><Link to="/contact">Contact Us</Link></li>
                             </ul>
                         </div>
                     </div>

@@ -9,7 +9,7 @@ print("[INFO] This may take a few minutes on first run as the model is downloade
 
 try:
     from sentence_transformers import SentenceTransformer
-    import torch
+    import torcha
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"[INFO] Using device: {device}")

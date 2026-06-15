@@ -199,7 +199,7 @@ const styles = {
         outline: 'none',
     },
     button: {
-        background: 'linear-gradient(135deg, #6c5ce7, #8575f8)',
+        background: 'linear-gradient(135deg, #83ace2, #2c7fbe)',
         color: '#ffffff',
         border: 'none',
         borderRadius: '8px',
@@ -240,7 +240,7 @@ const styles = {
         fontWeight: '600',
     },
     link: {
-        color: '#6c5ce7',
+        color: '#2974c9',
         textDecoration: 'none',
         fontWeight: '500',
     },

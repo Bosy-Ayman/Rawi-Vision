@@ -265,7 +265,7 @@ body:has(.insight-card:hover) .custom-cursor {
 .features {
     background-color: #D7E9F7;
     padding: 4rem 0;
-    margin-top: 3rem;
+    margin-top: -1rem;
     border-radius: 50px 50px 0 0;
 }
 
@@ -429,7 +429,7 @@ body:has(.insight-card:hover) .custom-cursor {
 }
 
 .footer-heading {
-    font-size: 0.75rem;
+    font-size: 0.8rem;
     font-weight: 700;
     color: #374151;
     margin: 0 0 1.5rem 0;
@@ -449,7 +449,7 @@ body:has(.insight-card:hover) .custom-cursor {
 .footer-links li a {
     color: #6b7280;
     text-decoration: none;
-    font-size: 0.8rem;
+    font-size: 1rem;
     transition: color 0.2s ease;
 }
 

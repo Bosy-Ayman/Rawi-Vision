@@ -1,0 +1,145 @@
+/* src/pages/Team.css */
+.team-page {
+  min-height: 100vh;
+  background-color: #ffffff;
+}
+
+/* Hero Section */
+.team-hero {
+  background: linear-gradient(135deg, #386E9D 0%, #2c5a85 100%);
+  color: white;
+  text-align: center;
+  padding: 4rem 2rem;
+}
+
+.team-hero h1 {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+}
+
+.team-hero p {
+  font-size: 1.1rem;
+  opacity: 0.9;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* Team Section */
+.team-section {
+  padding: 4rem 2rem;
+  background-color: #f9fafb;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 2rem;
+}
+
+.team-card {
+  background: white;
+  border-radius: 16px;
+  padding: 2rem;
+  text-align: center;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.team-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
+}
+
+.team-avatar {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+.team-card h3 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 0.5rem;
+}
+
+.team-id {
+  font-size: 0.85rem;
+  color: #9ca3af;
+  margin-bottom: 0.5rem;
+}
+
+.team-role {
+  font-weight: 600;
+  color: #386E9D;
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.team-desc {
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+/* Supervisor Section */
+.supervisor-section {
+  padding: 3rem 2rem 5rem;
+  background-color: white;
+}
+
+.supervisor-card {
+  max-width: 400px;
+  margin: 0 auto;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
+  border-radius: 20px;
+  padding: 2rem;
+  text-align: center;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.supervisor-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+.supervisor-card h3 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.supervisor-name {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #386E9D;
+  margin-bottom: 0.25rem;
+}
+
+.supervisor-title {
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .team-hero h1 {
+    font-size: 2rem;
+  }
+
+  .team-grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .supervisor-name {
+    font-size: 1.2rem;
+  }
+}

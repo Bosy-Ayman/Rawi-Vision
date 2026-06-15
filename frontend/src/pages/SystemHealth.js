@@ -1,5 +1,5 @@
 import React from 'react';
-import './SystemHealth.css'; // Optional custom styles if needed
+// import './SystemHealth.css'; // Optional custom styles if needed
 
 const SystemHealth = () => {
     return (
@@ -11,7 +11,7 @@ const SystemHealth = () => {
             
             <div className="iframe-container" style={{ flex: 1, borderRadius: '8px', overflow: 'hidden', border: '1px solid #ddd' }}>
                 <iframe 
-                    src="http://localhost:3001/d/system_health/system-health-overview?orgId=1&kiosk" 
+                    src="http://localhost:3002/d/system_health/system-health-overview?orgId=1&kiosk" 
                     width="100%" 
                     height="100%" 
                     frameBorder="0"

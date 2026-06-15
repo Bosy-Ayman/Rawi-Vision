@@ -55,9 +55,9 @@ const TopBar = ({ title }) => {
             <h1 className="page-title">{title}</h1>
 
             <div className="topbar-actions">
-                <div className="language-selector">
+                {/* <div className="language-selector">
                     🇺🇸 Eng (US) ⌄
-                </div>
+                </div> */}
 
                 <div className="notification-container" style={{ position: 'relative' }}>
                     <button 
@@ -192,7 +192,7 @@ const TopBar = ({ title }) => {
                         className="user-avatar"
                     />
                     <div className="user-info">
-                        <span className="user-name">Mustiq</span>
+                        <span className="user-name">TestUser</span>
                         <span className="user-role">Admin</span>
                     </div>
                     <span className="dropdown-arrow">⌄</span>
