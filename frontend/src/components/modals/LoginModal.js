@@ -55,7 +55,7 @@ const LoginModal = ({ isOpen, onClose }) => {
 
         // Fake/manual login (replace later with API)
         if (email === 'superadmin@superadmin.com') {
-            navigate('/admin/system-users');
+            navigate('/dashboard/system-users');
         } else if (email === 'hr@hr.com') {
             navigate('/dashboard/employee-onboarding');
         } else {
