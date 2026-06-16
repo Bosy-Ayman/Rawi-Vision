@@ -15,6 +15,7 @@ if str(summarization_pipeline_dir) not in sys.path:
     sys.path.insert(0, str(summarization_pipeline_dir))
 
 from utils.celery_client import celery_app
+from utils.model_cache import get_yolo, get_cache_status
 from object_detection import load_model
 from motion_filter import MotionFilter
 from frame_processor import save_frame
@@ -120,12 +121,12 @@ def ensure_bucket(client, bucket_name: str):
 
 # Make sure this task runs on the summarization queue
 celery_app.conf.task_routes.update({
-    "summarization.tasks.generate_video_summary_task": {"queue": "summarization"}
+    "summarization.celery_tasks.tasks.generate_video_summary_task": {"queue": "summarization"}
 })
 
 _GLOBAL_YOLO_MODEL = None
 
-@celery_app.task(bind=True, name="summarization.tasks.generate_video_summary_task")
+@celery_app.task(bind=True, name="summarization.celery_tasks.tasks.generate_video_summary_task", queue="summarization")
 def generate_video_summary_task(self, summary_id: str, video_id: str, camera_id: str, source_storage_path: str):
     import cv2
     import shutil
@@ -161,12 +162,15 @@ def generate_video_summary_task(self, summary_id: str, video_id: str, camera_id:
             minio.fget_object("camera-archive-videos", source_storage_path, tmp_src_path)
             emit_progress("downloading", 10)
 
-            # Setup YOLO model
+            # Setup YOLO model (use cached to save memory)
             global _GLOBAL_YOLO_MODEL
             if _GLOBAL_YOLO_MODEL is None:
-                print("[TASK] Loading YOLO model for summarization...")
+                print("[TASK] Loading YOLO model from cache for summarization...")
+                print(f"[TASK] Cached models: {get_cache_status()}")
                 emit_progress("loading_model", 15)
                 _GLOBAL_YOLO_MODEL = load_model(path="yolov8s.pt", use_gpu=True)
+            else:
+                print("[TASK] Re-using cached YOLO model")
 
             cap = cv2.VideoCapture(tmp_src_path)
             if not cap.isOpened():

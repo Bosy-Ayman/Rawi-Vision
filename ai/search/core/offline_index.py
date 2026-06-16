@@ -209,10 +209,13 @@ class FrameEncoder:
             self.face_manager.load_db_into_memory()
             
             face_weights = backend_dir / "camera_ingestion" / "ai" / "weights" / "yolov12m-face.pt"
+            person_weights = backend_dir / "camera_ingestion" / "ai" / "weights" / "yolov8n.pt"
+
             self.yolo_face = YOLO(str(face_weights)).to("cpu")
+            self.yolo_person = YOLO(str(person_weights)).to("cpu")
             self.resnet = InceptionResnetV1(pretrained="vggface2").to("cpu").eval()
             self.face_recognition_enabled = True
-            print("[INFO] Face Recognition components loaded successfully on CPU")
+            print("[INFO] Face Recognition + Person Detection components loaded successfully on CPU")
         except Exception as e:
             print(f"[WARN] Failed to load Face Recognition: {e}")
 
@@ -361,38 +364,64 @@ class FrameEncoder:
         desc_text = self.describe_vlm(frame_rgb, obj_text, objects, ocr_words, motion_desc)
 
         # 4. Run Face Recognition — collect one detection dict per face found
-        face_detections = []  # List of {"emp_id": ..., "name": ..., "confidence": ...}
+        face_detections = []  # List of {"emp_id": ..., "name": ..., "confidence": ..., "person_bbox": ..., "face_bbox": ...}
         if self.face_recognition_enabled:
             try:
-                face_results = self.yolo_face(frame_bgr, verbose=False, conf=0.3)
-                for r in face_results:
-                    for box in r.boxes:
-                        x1, y1, x2, y2 = map(int, box.xyxy[0])
+                # First detect persons in frame
+                person_results = self.yolo_person(frame_bgr, verbose=False, conf=0.3, classes=0)
+                for person_result in person_results:
+                    for person_box in person_result.boxes:
+                        px1, py1, px2, py2 = map(int, person_box.xyxy[0])
                         h, w = frame_bgr.shape[:2]
-                        x1, y1 = max(0, x1), max(0, y1)
-                        x2, y2 = min(w, x2), min(h, y2)
-                        face_crop = frame_bgr[y1:y2, x1:x2]
-                        if face_crop.size > 0:
-                            face_crop_rgb = cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
-                            face_resized = cv2.resize(face_crop_rgb, (160, 160))
-                            face_norm = face_resized.astype(np.float32) / 255.0
-                            face_norm = (face_norm - 0.5) / 0.5
-                            face_tensor = torch.tensor(np.transpose(face_norm, (2, 0, 1))).unsqueeze(0).to("cpu")
-                            with torch.no_grad():
-                                emb = self.resnet(face_tensor).cpu().numpy().squeeze()
-                            # search_face returns (name, emp_id, dist)
-                            name, emp_id, dist = self.face_manager.search_face(emb)
-                            # Store ALL face detections, including unknown ones
-                            face_detections.append({
-                                "emp_id": str(emp_id),
-                                "name": name,
-                                "confidence": float(1.0 - dist),  # invert distance -> confidence
-                                "x1": int(x1),
-                                "y1": int(y1),
-                                "x2": int(x2),
-                                "y2": int(y2),
-                                "is_unknown": name == "Unknown"
-                            })
+                        px1, py1 = max(0, px1), max(0, py1)
+                        px2, py2 = min(w, px2), min(h, py2)
+                        person_crop = frame_bgr[py1:py2, px1:px2]
+
+                        if person_crop.size > 0:
+                            # Run face detection within person crop
+                            face_results = self.yolo_face(person_crop, verbose=False, conf=0.3)
+                            for face_result in face_results:
+                                for face_box in face_result.boxes:
+                                    # Face bbox is relative to person crop, convert to full frame
+                                    fx1, fy1, fx2, fy2 = map(int, face_box.xyxy[0])
+                                    # Convert to full frame coordinates
+                                    fx1_full = px1 + fx1
+                                    fy1_full = py1 + fy1
+                                    fx2_full = px1 + fx2
+                                    fy2_full = py1 + fy2
+
+                                    # Bounds check
+                                    fx1_full = max(0, min(w, fx1_full))
+                                    fy1_full = max(0, min(h, fy1_full))
+                                    fx2_full = max(0, min(w, fx2_full))
+                                    fy2_full = max(0, min(h, fy2_full))
+
+                                    face_crop_full = frame_bgr[fy1_full:fy2_full, fx1_full:fx2_full]
+                                    if face_crop_full.size > 0:
+                                        face_crop_rgb = cv2.cvtColor(face_crop_full, cv2.COLOR_BGR2RGB)
+                                        face_resized = cv2.resize(face_crop_rgb, (160, 160))
+                                        face_norm = face_resized.astype(np.float32) / 255.0
+                                        face_norm = (face_norm - 0.5) / 0.5
+                                        face_tensor = torch.tensor(np.transpose(face_norm, (2, 0, 1))).unsqueeze(0).to("cpu")
+                                        with torch.no_grad():
+                                            emb = self.resnet(face_tensor).cpu().numpy().squeeze()
+                                        # search_face returns (name, emp_id, dist)
+                                        name, emp_id, dist = self.face_manager.search_face(emb)
+                                        # Store face detection with FULL BODY BBOX for proper drawing
+                                        face_detections.append({
+                                            "emp_id": str(emp_id),
+                                            "name": name,
+                                            "confidence": float(1.0 - dist),
+                                            "person_x1": int(px1),  # Full body bbox
+                                            "person_y1": int(py1),
+                                            "person_x2": int(px2),
+                                            "person_y2": int(py2),
+                                            "face_x1": int(fx1_full),  # Face bbox (for reference)
+                                            "face_y1": int(fy1_full),
+                                            "face_x2": int(fx2_full),
+                                            "face_y2": int(fy2_full),
+                                            "is_unknown": name == "Unknown"
+                                        })
             except Exception as face_err:
                 print(f"[WARN] Face Recognition failed during frame encoding: {face_err}")
 

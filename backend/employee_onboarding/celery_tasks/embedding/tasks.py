@@ -9,29 +9,18 @@ from ...schemas.employee import EmployeeUpdate
 from ...utils.minio_storage_client import MinioStorageClient
 import asyncio
 from utils.celery_client import celery_app
+from utils.model_cache import get_yolo, get_inception_face_embedder, get_cache_status
 from config import Config
 
 BASE_URL = Config.SERVER_URL
 
-_detector = None
-_embedder = None
-
 def get_face_models():
-    global _detector, _embedder
-    if _embedder is None:
-        print("[INFO] Initializing YOLOv12m-face and InceptionResnetV1 for embeddings...")
-        from ultralytics import YOLO
-        from facenet_pytorch import InceptionResnetV1
-        import torch
-        from pathlib import Path
-        
-        device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        backend_dir = Path(__file__).resolve().parent.parent.parent.parent
-        face_weights = backend_dir / "camera_ingestion" / "ai" / "weights" / "yolov12m-face.pt"
-        
-        _detector = YOLO(str(face_weights)).to(device)
-        _embedder = InceptionResnetV1(pretrained="vggface2").eval().to(device)
-    return _detector, _embedder
+    """Get cached face models (shared with face recognition and indexing)."""
+    print("[INFO] Loading YOLOv12m-face and InceptionResnetV1 from cache...")
+    print(f"[INFO] Cached models: {get_cache_status()}")
+    detector = get_yolo('yolov12m-face.pt')
+    embedder = get_inception_face_embedder()
+    return detector, embedder
 
 def generate_embedding(images_bytes):
     detector, embedder = get_face_models()
@@ -84,15 +73,16 @@ def generate_embedding(images_bytes):
         return avg_embedding
     return None
 
-@celery_app.task
-def create_embedding_task(bucket_name, employee_id: str): #generates the embedding and puts it in the database
+@celery_app.task(queue="embedding", name="employee_onboarding.celery_tasks.embedding.tasks.create_embedding_task")
+def create_embedding_task(bucket_name, employee_id: str):
+    """Generate embeddings using cached models and store in database."""
     try:
         object_storage = MinioStorageClient()
         images_bytes = object_storage.get_objects_binary(bucket_name=bucket_name, prefix=f"{employee_id}")
         embedding = generate_embedding(images_bytes)
         if embedding is not None:
-            embedding = embedding.astype(float)  
-            embedding_list = [float(x) for x in embedding]  
+            embedding = embedding.astype(float)
+            embedding_list = [float(x) for x in embedding]
         else:
             embedding_list = None
         new_employee = {
@@ -102,7 +92,7 @@ def create_embedding_task(bucket_name, employee_id: str): #generates the embeddi
         print(type(new_employee["embedding"]))
         print(type(new_employee["embedding"][0]))
         with httpx.Client() as client:
-            response = client.patch(f"{BASE_URL}/employee/{employee_id}",json=new_employee,headers={"Authorization": "Bearer sherlockholmes"})  # this is for secure internal calls
+            response = client.patch(f"{BASE_URL}/employee/{employee_id}", json=new_employee, headers={"Authorization": "Bearer sherlockholmes"})
         return response.status_code
     except Exception as error:
         raise error

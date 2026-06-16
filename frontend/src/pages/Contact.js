@@ -5,53 +5,53 @@ import LoginModal from '../components/modals/LoginModal';
 import Footer from '../components/Footer';
 
 function Contact() {
-  // const [formData, setFormData] = useState({
-  //   name: '',
-  //   email: '',
-  //   subject: '',
-  //   message: ''
-  // });
-  // const [status, setStatus] = useState(null);
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    subject: '',
+    message: ''
+  });
+  const [status, setStatus] = useState(null);
   const [activeModal, setActiveModal] = useState(null);
 
   const openLogin = () => setActiveModal('login');
   const closeModal = () => setActiveModal(null);
 
-  // const handleChange = (e) => {
-  //   setFormData({ ...formData, [e.target.name]: e.target.value });
-  // };
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
 
-  // const handleSubmit = async (e) => {
-  //   e.preventDefault();
-  //   setStatus('sending');
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setStatus('sending');
 
-  //   // Use the actual backend port (change 8002 to your real port if different)
-  //   const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8002';
-  //   const url = `${API_BASE}/api/contact/`;
+    // Use the actual backend port (change 8002 to your real port if different)
+    const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8002';
+    const url = `${API_BASE}/api/contact/`;
 
-  //   try {
-  //     const response = await fetch(url, {
-  //       method: 'POST',
-  //       headers: { 'Content-Type': 'application/json' },
-  //       body: JSON.stringify(formData),
-  //     });
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
 
-  //     if (response.ok) {
-  //       setStatus('sent');
-  //       setFormData({ name: '', email: '', subject: '', message: '' });
-  //       setTimeout(() => setStatus(null), 5000);
-  //     } else {
-  //       const errorText = await response.text();
-  //       console.error('Server response:', errorText);
-  //       setStatus('error');
-  //       setTimeout(() => setStatus(null), 5000);
-  //     }
-  //   } catch (error) {
-  //     console.error('Fetch error:', error);
-  //     setStatus('error');
-  //     setTimeout(() => setStatus(null), 5000);
-  //   }
-  // };
+      if (response.ok) {
+        setStatus('sent');
+        setFormData({ name: '', email: '', subject: '', message: '' });
+        setTimeout(() => setStatus(null), 5000);
+      } else {
+        const errorText = await response.text();
+        console.error('Server response:', errorText);
+        setStatus('error');
+        setTimeout(() => setStatus(null), 5000);
+      }
+    } catch (error) {
+      console.error('Fetch error:', error);
+      setStatus('error');
+      setTimeout(() => setStatus(null), 5000);
+    }
+  };
 
   return (
     <div className="contact-page">
@@ -103,7 +103,7 @@ function Contact() {
               </div>
             </div>
 
-            {/* <form className="contact-form-card" onSubmit={handleSubmit}>
+            <form className="contact-form-card" onSubmit={handleSubmit}>
               <h2>Send us a message</h2>
               <div className="form-group">
                 <input type="text" name="name" placeholder="Full name *" value={formData.name} onChange={handleChange} required />
@@ -122,7 +122,7 @@ function Contact() {
               </button>
               {status === 'sent' && <p className="success-msg">✓ Message sent! We'll reply soon.</p>}
               {status === 'error' && <p className="error-msg">❌ Failed to send. Check console for details.</p>}
-            </form> */}
+            </form>
           </div>
         </div>
       </section>

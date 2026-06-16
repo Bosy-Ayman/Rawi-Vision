@@ -29,13 +29,12 @@ const Sidebar = () => {
         location.pathname.startsWith('/dashboard/employee/') ||
         location.pathname === '/dashboard/camera-onboarding' ||
         location.pathname === '/dashboard/all-cameras' ||
-        location.pathname === '/dashboard/system-health';
-
-        // location.pathname === '/admin/received-messages' ||
-        // location.pathname === '/dashboard/system-users';
+        location.pathname === '/dashboard/system-health' ||
+        location.pathname === '/admin/received-messages' ||
+        location.pathname === '/admin/system-users';
 
     // SuperAdmin Journey: system user management
-    const isSuperAdminJourney = location.pathname === '/admin/sc';
+    const isSuperAdminJourney = location.pathname === '/admin/system-users';
 
     const standardMenuItems = [
         { name: 'Video Feed', icon: 'video-feed.svg', path: '/dashboard/video-feed' },
@@ -55,11 +54,12 @@ const Sidebar = () => {
         { name: 'Add Camera', icon: 'employee-insights.svg', path: '/dashboard/camera-onboarding' },
         { name: 'All Cameras', icon: 'employee-insights.svg', path: '/dashboard/all-cameras' },
         { name: 'System Health', icon: 'dashboard.svg', path: '/dashboard/system-health' },
-        // { name: 'Received Messages', icon: 'employee-insights.svg', path: '/admin/received-messages' },
+        { name: 'Received Messages', icon: 'employee-insights.svg', path: '/admin/received-messages' },
+        { name: 'Add Users', icon: 'employee-insights.svg', path: '/admin/system-users' }
     ];
 
     const superAdminMenuItems = [
-        { name: 'Add Users', icon: 'employee-insights.svg', path: '/dashboard/system-users' }
+        { name: 'Add Users', icon: 'employee-insights.svg', path: '/admin/system-users' }
     ];
 
     const menuItems = isSuperAdminJourney ? superAdminMenuItems : isHRJourney ? hrMenuItems : standardMenuItems;

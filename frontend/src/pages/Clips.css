@@ -837,6 +837,12 @@
     border: 1px solid rgba(100, 116, 139, 0.2);
 }
 
+.timeline-tag.anomaly {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: #dc2626;
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
 .timeline-loading,
 .timeline-empty {
     padding: 60px 20px;

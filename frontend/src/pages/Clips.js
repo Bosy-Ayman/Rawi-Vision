@@ -9,6 +9,7 @@ const Clips = () => {
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
     const [enableFaceRecognition, setEnableFaceRecognition] = useState(true);
+    const [enableAnomalyDetection, setEnableAnomalyDetection] = useState(true);
 
     // Timeline modal state
     const [selectedVideo, setSelectedVideo] = useState(null);
@@ -97,6 +98,7 @@ const Clips = () => {
         formData.append('camera_id', '00000000-0000-0000-0000-000000000000'); // Default test camera
         formData.append('sampling_rate', 16);
         formData.append('enable_face_recognition', enableFaceRecognition);
+        formData.append('enable_anomaly_detection', enableAnomalyDetection);
 
         setUploading(true);
         try {
@@ -163,7 +165,7 @@ const Clips = () => {
         const parts = desc.split('|').map(p => p.trim());
         const text = parts[0];
         const tags = [];
-        
+
         parts.slice(1).forEach(part => {
             if (part.startsWith('Objects:')) {
                 let objText = part.replace('Objects:', '').trim();
@@ -181,11 +183,16 @@ const Clips = () => {
                 if (textVal && textVal.toLowerCase() !== 'none') {
                     tags.push({ label: 'Text', value: textVal, type: 'text' });
                 }
+            } else if (part.startsWith('Anomaly:')) {
+                const anomalyVal = part.replace('Anomaly:', '').trim();
+                if (anomalyVal && anomalyVal.toLowerCase() !== 'none') {
+                    tags.push({ label: 'Anomaly', value: anomalyVal, type: 'anomaly' });
+                }
             } else {
                 tags.push({ label: 'Info', value: part, type: 'info' });
             }
         });
-        
+
         return { text, tags };
     };
 
@@ -281,6 +288,26 @@ const Clips = () => {
                             />
                             <label htmlFor="faceRecognitionToggle" style={{ cursor: 'pointer', fontSize: '0.9rem', margin: 0 }}>
                                 👤 Face Recognition
+                            </label>
+                        </div>
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '8px 12px',
+                            backgroundColor: '#f1f5f9',
+                            borderRadius: '6px',
+                            border: '1px solid #e2e8f0'
+                        }}>
+                            <input
+                                type="checkbox"
+                                id="anomalyDetectionToggle"
+                                checked={enableAnomalyDetection}
+                                onChange={(e) => setEnableAnomalyDetection(e.target.checked)}
+                                style={{ cursor: 'pointer' }}
+                            />
+                            <label htmlFor="anomalyDetectionToggle" style={{ cursor: 'pointer', fontSize: '0.9rem', margin: 0 }}>
+                                🔍 Anomaly Detection
                             </label>
                         </div>
                         <div className="upload-btn-wrapper">

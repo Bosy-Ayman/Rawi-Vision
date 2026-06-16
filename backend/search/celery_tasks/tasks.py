@@ -61,6 +61,7 @@ from typing import Optional
 # This is what fixes tasks being sent but never received.
 # ----------------------------------------------------------------------
 from utils.celery_client import celery_app
+from utils.model_cache import get_cache_status, clear_cache
 
 
 # ----------------------------------------------------------------------
@@ -78,15 +79,13 @@ def get_redis_client():
 
 
 # ----------------------------------------------------------------------
-# Queue routing — all three tasks go through the default "celery" queue
-# so the worker picks them up without needing extra -Q flags.
-# If you later want dedicated queues, add -Q indexing_queue etc. to the
-# worker start command AND update task_routes here consistently.
+# Queue routing — tasks now go to dedicated queues for memory optimization
+# Run workers with: -Q indexing (and other queues as needed)
 # ----------------------------------------------------------------------
 celery_app.conf.task_routes = {
-    "search.tasks.index_video_task":        {"queue": "celery"},
-    "search.tasks.extract_clip_task":       {"queue": "celery"},
-    "search.tasks.record_and_index_task":   {"queue": "celery"},
+    "search.tasks.index_video_task":        {"queue": "indexing"},
+    "search.tasks.extract_clip_task":       {"queue": "indexing"},
+    "search.tasks.record_and_index_task":   {"queue": "indexing"},
 }
 
 
@@ -230,10 +229,10 @@ def index_video_task(self, video_id: str, storage_path: str, sampling_rate: int 
             sys.path.insert(0, str(search_core.parent))
 
         from offline_index import FrameEncoder
+        import torch
 
         global _GLOBAL_ENCODER
         if _GLOBAL_ENCODER is None:
-            import torch
             device_to_use = "cpu"
             if torch.cuda.is_available() and torch.cuda.device_count() > 0:
                 try:
@@ -249,9 +248,11 @@ def index_video_task(self, video_id: str, storage_path: str, sampling_rate: int 
                     print(f"[WARN] Low VRAM ({free_vram / 1024**3:.2f} GB free) — using CPU")
 
             print(f"[TASK] Initializing global FrameEncoder (device={device_to_use})")
+            print(f"[TASK] Cached models: {get_cache_status()}")
             _GLOBAL_ENCODER = FrameEncoder(use_vlm=True, device=device_to_use)
         else:
             print("[TASK] Re-using cached global FrameEncoder")
+            print(f"[TASK] Cached models: {get_cache_status()}")
 
         encoder = _GLOBAL_ENCODER
 
@@ -475,7 +476,14 @@ def extract_clip_task(self, video_id: str, storage_path: str, frame_number: int,
                 face_dets = frame_bbox_map[current_frame]
                 for det in face_dets:
                     try:
-                        x1, y1, x2, y2 = int(det["x1"] * scale_x), int(det["y1"] * scale_y), int(det["x2"] * scale_x), int(det["y2"] * scale_y)
+                        # Use PERSON bbox (full body) for drawing, not face bbox
+                        # Fallback to face bbox if person bbox not available (backwards compatibility)
+                        if "person_x1" in det:
+                            x1, y1, x2, y2 = int(det["person_x1"] * scale_x), int(det["person_y1"] * scale_y), int(det["person_x2"] * scale_x), int(det["person_y2"] * scale_y)
+                        else:
+                            # Fallback for old data format
+                            x1, y1, x2, y2 = int(det["x1"] * scale_x), int(det["y1"] * scale_y), int(det["x2"] * scale_x), int(det["y2"] * scale_y)
+
                         name = det.get("name", "Unknown")
                         conf = det.get("confidence", 0)
                         is_unknown = det.get("is_unknown", False)
@@ -620,11 +628,10 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
     if burn_bboxes:
         try:
             import torch
-            from ultralytics import YOLO
+            from utils.model_cache import get_yolo, get_inception_face_embedder, get_cache_status
             from boxmot.trackers.tracker_zoo import create_tracker
-            from facenet_pytorch import InceptionResnetV1
             import sys
-            
+
             # Setup path to load EmbeddingManager
             backend_dir = Path(__file__).resolve().parent.parent.parent
             project_dir = backend_dir.parent
@@ -632,25 +639,29 @@ def record_and_index_task(self, camera_id: str, duration: int = 600,
             if str(search_core) not in sys.path:
                 sys.path.insert(0, str(search_core))
             from embedding_manager import EmbeddingManager
-            
+
             device = "cuda:0" if torch.cuda.is_available() else "cpu"
             weights_dir = project_dir / "backend" / "camera_ingestion" / "ai" / "weights"
-            
-            print(f"[RECORD-AI] Loading YOLO person and tracking models on {device}...")
-            annotator_yolo_person = YOLO(str(weights_dir / "yolov8n.pt")).to(device)
+
+            print(f"[RECORD-AI] Loading YOLO models from cache on {device}...")
+            print(f"[RECORD-AI] Cached models: {get_cache_status()}")
+
+            # Use cached models instead of loading fresh
+            annotator_yolo_person = get_yolo('yolov8n.pt')
             annotator_tracker = create_tracker(
                 tracker_type="strongsort",
                 reid_weights=weights_dir / "osnet_x0_25_msmt17.pt",
                 device=device,
                 half=device == "cuda:0"
             )
-            
+
             try:
-                annotator_yolo_face = YOLO(str(weights_dir / "yolov12m-face.pt")).to(device)
-                annotator_resnet = InceptionResnetV1(pretrained="vggface2").to(device).eval()
+                # Use cached face models
+                annotator_yolo_face = get_yolo('yolov12m-face.pt')
+                annotator_resnet = get_inception_face_embedder()
                 annotator_face_manager = EmbeddingManager(db_config=os.getenv("DATABASE_URL"))
                 annotator_face_manager.load_db_into_memory()
-                print("[RECORD-AI] Face recognition models loaded successfully.")
+                print("[RECORD-AI] Face recognition models loaded from cache successfully.")
             except Exception as fe:
                 print(f"[RECORD-AI] Warning: Face recognition sub-models failed to load: {fe}")
         except Exception as e:

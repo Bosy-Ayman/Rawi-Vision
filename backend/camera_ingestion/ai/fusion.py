@@ -15,6 +15,7 @@ from .embedding_manager import EmbeddingManager
 from kombu import Connection, Exchange, Producer
 from config import Config
 import redis
+from utils.model_cache import get_yolo, get_inception_face_embedder, get_cache_status
 
 RABBITMQ_URL = Config.RABBITMQ_BROKER_URL
 redis_client = redis.Redis(host=Config.REDIS_HOST, port=int(Config.REDIS_PORT), db=0)
@@ -101,17 +102,20 @@ def run_pipeline(
     logger = EventLogger(log_file)
     logger.log("PIPELINE_START", detail=f"db={db_folder} threshold={threshold}")
 
-    # ── Models ──────────────────────────────────────────────────────────────
+    # ── Models (CACHED for memory efficiency) ──────────────────────────────
+    print(f"[Face Recognition] Loading models from cache...")
+    print(f"[Face Recognition] Cached models: {get_cache_status()}")
+
     weights_dir = Path(__file__).parent / "weights"
-    yolo_face = YOLO(str(weights_dir / "yolov12m-face.pt")).to(device)
-    yolo_person = YOLO(str(weights_dir / "yolov8n.pt")).to(device)
-    tracker     = create_tracker(
-            tracker_type="strongsort",
-            reid_weights=weights_dir / "osnet_x0_25_msmt17.pt",
-            device=device,
-            half=device == "cuda:0",
-        )
-    resnet = InceptionResnetV1(pretrained="vggface2").to(device).eval()
+    yolo_face = get_yolo('yolov12m-face.pt')
+    yolo_person = get_yolo('yolov8n.pt')
+    tracker = create_tracker(
+        tracker_type="strongsort",
+        reid_weights=weights_dir / "osnet_x0_25_msmt17.pt",
+        device=device,
+        half=device == "cuda:0",
+    )
+    resnet = get_inception_face_embedder()
     with torch.no_grad():
         resnet(torch.zeros(1, 3, 160, 160).to(device))
 

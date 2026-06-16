@@ -22,7 +22,7 @@ import Summarization from './pages/Summarization';
 import About from './pages/About';
 import Contact from './pages/Contact';
 import Team from './pages/Team';
-// import ReceivedMessages from './pages/ReceivedMessages';
+import ReceivedMessages from './pages/ReceivedMessages';
 import { SubscriptionProvider } from './context/SubscriptionContext';
 import SubscriptionGuard from './components/dashboard/SubscriptionGuard';
 
@@ -58,7 +58,7 @@ function App() {
             <Route path="/admin/system-users" element={<SubscriptionGuard><SystemUserManagement /></SubscriptionGuard>} />
             <Route path="/dashboard/settings" element={<SubscriptionGuard><Settings /></SubscriptionGuard>} />
             <Route path="/dashboard/system-health" element={<SubscriptionGuard><SystemHealth /></SubscriptionGuard>} />
-            {/* <Route path="/admin/received-messages" element={<SubscriptionGuard><ReceivedMessages /></SubscriptionGuard>} /> */}
+            <Route path="/admin/received-messages" element={<SubscriptionGuard><ReceivedMessages /></SubscriptionGuard>} />
             <Route path="/about" element={<About />} />
             <Route path="/contact" element={<Contact />} />            
             
