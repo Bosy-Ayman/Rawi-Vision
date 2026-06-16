@@ -28,6 +28,7 @@ from camera_onboarding.models.camera import Camera
 from search.schemas.search import SearchQueryRequest, SearchQueryResponse, VideoStatusResponse, RecordRequest, RecordingStatusResponse, VideoFrameResponse
 from search.services.search_service import SearchService
 from search.celery_tasks.tasks import index_video_task, extract_clip_task, record_and_index_task
+from anomaly.celery_tasks.tasks import run_anomaly_detection
 
 search_router = APIRouter(prefix="/api/search", tags=["semantic video search"])
 
@@ -119,6 +120,32 @@ async def upload_video(
         redis_client.set(f"indexing:task_id:{video_id}", task.id)
     except Exception as e:
         print(f"[WARN] Failed to save task_id to Redis: {e}")
+
+    # Dispatch Celery anomaly detection task on the uploaded video
+    from datetime import timedelta
+    try:
+        presigned_url = minio.presigned_get_object(
+            bucket_name=bucket_name,
+            object_name=storage_path,
+            expires=timedelta(hours=24)
+        )
+        cam_mac = "Upload"
+        if camera_id and str(camera_id) != "00000000-0000-0000-0000-000000000000":
+            cam_stmt = select(Camera).filter(Camera.id == camera_id)
+            cam_result = await db.execute(cam_stmt)
+            camera_obj = cam_result.scalar_one_or_none()
+            if camera_obj and camera_obj.mac_address:
+                cam_mac = camera_obj.mac_address
+
+        print(f"[API] Dispatching anomaly detection for uploaded video {video_id} on {cam_mac}")
+        run_anomaly_detection.delay(
+            rtsp_url=presigned_url,
+            camera_mac=cam_mac,
+            task_id=str(video_id),
+            is_live=False
+        )
+    except Exception as e:
+        print(f"[WARN] Failed to dispatch anomaly task for upload: {e}")
 
     return {
         "video_id": str(video_id),

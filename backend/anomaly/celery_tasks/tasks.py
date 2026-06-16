@@ -7,6 +7,7 @@ import base64
 import json
 import os
 from utils.celery_client import celery_app
+from utils.model_cache import get_smolvlm, get_videomae, get_cache_status
 from camera_ingestion.utils.redis import redis_client
 
 # -------------------------- Config -------------------------------------------
@@ -26,60 +27,15 @@ INFER_EVERY_N = 90
 KAFKA_BROKER = "localhost:29092"
 KAFKA_TOPIC = "anomaly-incidents"
 
-# -------------------------- Global Model Instances (Lazy) -------------------------------
-s1_processor = None
-s1_model = None
-s3_processor = None
-s3_model = None
-_kafka_producer = None
+# Task routing - dedicated queue for anomaly detection
+celery_app.conf.task_routes = {
+    "anomaly.celery_tasks.tasks.run_anomaly_detection": {"queue": "anomaly"},
+}
+
+# Global model state (now uses model_cache)
+_models_loaded = False
 torch = None
 DEVICE = "cpu"
-
-def load_models():
-    """Heavy imports and model loading happen ONLY when this is called."""
-    global s1_processor, s1_model, s3_processor, s3_model, _kafka_producer, torch, DEVICE
-    
-    if s1_model is not None:
-        return
-
-    # Heavy Imports (Inside function to save memory)
-    import torch as _torch
-    torch = _torch
-    from transformers import (
-        AutoModelForVideoClassification,
-        AutoImageProcessor,
-        AutoProcessor,
-        AutoModelForImageTextToText,
-        BitsAndBytesConfig,
-    )
-    from confluent_kafka import Producer as KafkaProducer
-
-    DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Loading Anomaly Models on {DEVICE}...")
-
-    s1_processor = AutoImageProcessor.from_pretrained(STAGE1_MODEL_ID)
-    s1_model = AutoModelForVideoClassification.from_pretrained(STAGE1_MODEL_ID).to(DEVICE).eval()
-
-    s3_processor = AutoProcessor.from_pretrained(STAGE3_MODEL_ID)
-    s3_model = AutoModelForImageTextToText.from_pretrained(
-        STAGE3_MODEL_ID,
-        quantization_config=BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.float16,
-        ),
-        device_map="auto",
-        torch_dtype=torch.float16,
-        low_cpu_mem_usage=True,
-        attn_implementation="eager",
-    ).eval()
-
-    try:
-        _kafka_producer = KafkaProducer({"bootstrap.servers": KAFKA_BROKER})
-        print(f"[Kafka] Producer connected to {KAFKA_BROKER}")
-    except Exception as e:
-        print(f"[Kafka] Producer init failed: {e}")
 
 # -------------------------- Helpers ---------------------------------------
 
@@ -109,10 +65,14 @@ def extract_anomaly_type(vlm_text: str) -> str:
     return "unknown"
 
 def run_videomae(frames):
-    inputs = s1_processor(images=frames, return_tensors="pt").to(DEVICE)
-    with torch.no_grad():
-        outputs = s1_model(**inputs)
-    return torch.nn.functional.softmax(outputs.logits, dim=-1)[0]
+    """Run VideoMAE model for anomaly detection (uses cached model)."""
+    import torch as _torch
+    videomae_processor, videomae_model = get_videomae()
+    device = "cuda" if _torch.cuda.is_available() else "cpu"
+    inputs = videomae_processor(images=frames, return_tensors="pt").to(device)
+    with _torch.no_grad():
+        outputs = videomae_model(**inputs)
+    return _torch.nn.functional.softmax(outputs.logits, dim=-1)[0]
 
 def sharpest_frame(frames):
     scores = []   
@@ -124,11 +84,26 @@ def sharpest_frame(frames):
 
 # -------------------------- The Celery Task -------------------------------
 
-@celery_app.task(name="run_anomaly_detection")
-def run_anomaly_detection(rtsp_url: str, camera_mac: str, task_id: str):
-    load_models()
-    from PIL import Image # Local import
-    
+@celery_app.task(name="run_anomaly_detection", queue="anomaly")
+def run_anomaly_detection(rtsp_url: str, camera_mac: str, task_id: str, is_live: bool = True):
+    """
+    Anomaly detection task using CACHED models to save memory.
+    - Stage 1: VideoMAE (cached)
+    - Stage 3: SmolVLM (cached, shared with indexing)
+    """
+    from PIL import Image
+    import torch as _torch
+
+    global _models_loaded, torch, DEVICE
+
+    if not _models_loaded:
+        print("[Anomaly] Loading models from cache...")
+        torch = _torch
+        DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+        print(f"[Anomaly] Using device: {DEVICE}")
+        print(f"[Anomaly] Cached models: {get_cache_status()}")
+        _models_loaded = True
+
     cap = cv2.VideoCapture(rtsp_url)
     if not cap.isOpened():
         print(f"Error: Could not open stream {rtsp_url}")
@@ -149,11 +124,15 @@ def run_anomaly_detection(rtsp_url: str, camera_mac: str, task_id: str):
 
             ret, frame = cap.read()
             if not ret:
-                cap.release()
-                time.sleep(5)
-                cap = cv2.VideoCapture(rtsp_url)
-                if not cap.isOpened(): break
-                continue
+                if not is_live:
+                    print(f"End of uploaded video file reached for task {task_id}")
+                    break
+                else:
+                    cap.release()
+                    time.sleep(5)
+                    cap = cv2.VideoCapture(rtsp_url)
+                    if not cap.isOpened(): break
+                    continue
 
             frame_count += 1
             small_rgb = cv2.cvtColor(cv2.resize(frame, FRAME_SIZE), cv2.COLOR_BGR2RGB)
@@ -164,16 +143,19 @@ def run_anomaly_detection(rtsp_url: str, camera_mac: str, task_id: str):
             if frame_count % INFER_EVERY_N == 0 and len(frame_buffer) == VIDEO_WINDOW:
                 s1_probs = run_videomae(list(frame_buffer))
                 s1_score = s1_probs[STAGE1_ANOMALY_IDX].item()
-                
+
                 print(f"[Heartbeat] Background check complete -> Anomaly Score: {s1_score:.4f} (Threshold: {STAGE1_THRESHOLD})")
-                
+
                 if s1_score > STAGE1_THRESHOLD:
                     now = time.time()
                     if (now - last_vlm_time) > STAGE3_COOLDOWN:
                         snap = sharpest_frame(list(vlm_frame_buffer))
                         pil_img = Image.fromarray(snap)
-                        
-                        # Ask the VLM to explain the scene regardless of anomalies
+
+                        # Get cached SmolVLM (shared with indexing!)
+                        s3_processor, s3_model = get_smolvlm()
+
+                        # Ask the VLM to explain the scene
                         prompt = "First, describe any human activity in this surveillance frame in detail (ignore watermarks). Second, classify the activity by appending exactly one of these tags at the end: [normal], [violence], [theft], [trespassing], [vandalism], or [unusual_behavior]. If no crime is occurring, use [normal]."
                         messages = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": prompt}]}]
                         text_input = s3_processor.apply_chat_template(messages, add_generation_prompt=True)
@@ -181,13 +163,13 @@ def run_anomaly_detection(rtsp_url: str, camera_mac: str, task_id: str):
 
                         with torch.no_grad():
                             out = s3_model.generate(**inputs, max_new_tokens=STAGE3_MAX_TOKENS)
-                        
+
                         raw = s3_processor.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True).strip()
                         anomaly_type = extract_anomaly_type(raw)
-                        
-                        # Always publish the explanation to the dashboard
+
+                        # Publish the explanation to dashboard
                         print(f"!!! SCENE EXPLANATION: {raw}")
-                        publish_incident_event(snap, anomaly_type, raw, s1_score, camera_mac)                
+                        publish_incident_event(snap, anomaly_type, raw, s1_score, camera_mac)
                         last_vlm_time = now
 
             time.sleep(0.01)
