@@ -364,35 +364,62 @@ class FrameEncoder:
         face_detections = []  # List of {"emp_id": ..., "name": ..., "confidence": ...}
         if self.face_recognition_enabled:
             try:
-                face_results = self.yolo_face(frame_bgr, verbose=False, conf=0.3)
-                for r in face_results:
-                    for box in r.boxes:
-                        x1, y1, x2, y2 = map(int, box.xyxy[0])
-                        h, w = frame_bgr.shape[:2]
-                        x1, y1 = max(0, x1), max(0, y1)
-                        x2, y2 = min(w, x2), min(h, y2)
-                        face_crop = frame_bgr[y1:y2, x1:x2]
-                        if face_crop.size > 0:
-                            face_crop_rgb = cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
-                            face_resized = cv2.resize(face_crop_rgb, (160, 160))
-                            face_norm = face_resized.astype(np.float32) / 255.0
-                            face_norm = (face_norm - 0.5) / 0.5
-                            face_tensor = torch.tensor(np.transpose(face_norm, (2, 0, 1))).unsqueeze(0).to("cpu")
-                            with torch.no_grad():
-                                emb = self.resnet(face_tensor).cpu().numpy().squeeze()
-                            # search_face returns (name, emp_id, dist)
-                            name, emp_id, dist = self.face_manager.search_face(emb)
-                            # Store ALL face detections, including unknown ones
-                            face_detections.append({
-                                "emp_id": str(emp_id),
-                                "name": name,
-                                "confidence": float(1.0 - dist),  # invert distance -> confidence
-                                "x1": int(x1),
-                                "y1": int(y1),
-                                "x2": int(x2),
-                                "y2": int(y2),
-                                "is_unknown": name == "Unknown"
-                            })
+                # First run person tracking if not already done, but we have track_ids from above? 
+                # Actually, let's use yolo_model to get person bounding boxes directly
+                person_results = self.yolo_model(frame_bgr, verbose=False, conf=0.5)
+                for pr in person_results:
+                    for box in pr.boxes:
+                        if int(box.cls[0]) == 0:  # person class
+                            px1, py1, px2, py2 = map(int, box.xyxy[0])
+                            h, w = frame_bgr.shape[:2]
+                            px1, py1 = max(0, px1), max(0, py1)
+                            px2, py2 = min(w, px2), min(h, py2)
+                            
+                            person_crop = frame_bgr[py1:py2, px1:px2]
+                            if person_crop.size > 0:
+                                face_results = self.yolo_face(person_crop, verbose=False, conf=0.3)
+                                
+                                name = "Unknown"
+                                emp_id = "0"
+                                dist = 1.0
+                                confidence = 0.0
+                                
+                                for r in face_results:
+                                    if r.boxes is not None and len(r.boxes) > 0:
+                                        # Take the first face found in the person crop
+                                        fbox = r.boxes[0]
+                                        fx1, fy1, fx2, fy2 = map(int, fbox.xyxy[0])
+                                        ph, pw = person_crop.shape[:2]
+                                        fx1, fy1 = max(0, fx1), max(0, fy1)
+                                        fx2, fy2 = min(pw, fx2), min(ph, fy2)
+                                        
+                                        face_crop = person_crop[fy1:fy2, fx1:fx2]
+                                        if face_crop.size > 0:
+                                            face_crop_rgb = cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
+                                            face_resized = cv2.resize(face_crop_rgb, (160, 160))
+                                            face_norm = face_resized.astype(np.float32) / 255.0
+                                            face_norm = (face_norm - 0.5) / 0.5
+                                            face_tensor = torch.tensor(np.transpose(face_norm, (2, 0, 1))).unsqueeze(0).to("cpu")
+                                            with torch.no_grad():
+                                                emb = self.resnet(face_tensor).cpu().numpy().squeeze()
+                                            db_name, db_emp_id, db_dist = self.face_manager.search_face(emb)
+                                            if db_dist < 1.0 and db_name != "Unknown":
+                                                name = db_name
+                                                emp_id = db_emp_id
+                                                dist = db_dist
+                                                confidence = float(1.0 - dist)
+                                        break # Process only the first face per person
+                                        
+                                face_detections.append({
+                                    "emp_id": str(emp_id),
+                                    "name": name,
+                                    "confidence": confidence,
+                                    "x1": int(px1),
+                                    "y1": int(py1),
+                                    "x2": int(px2),
+                                    "y2": int(py2),
+                                    "is_unknown": name == "Unknown"
+                                })
             except Exception as face_err:
                 print(f"[WARN] Face Recognition failed during frame encoding: {face_err}")
 

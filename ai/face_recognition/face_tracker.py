@@ -3,7 +3,7 @@ from mtcnn import MTCNN
 from keras_facenet import FaceNet
 from embedding_manager import EmbeddingManager
 
-THRESHOLD = 0.6  
+THRESHOLD = 0.8  
 #------------------  Models -----------------------------
 detector = MTCNN()
 embedder = FaceNet()
