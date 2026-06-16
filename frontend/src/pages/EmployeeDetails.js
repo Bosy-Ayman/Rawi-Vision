@@ -50,7 +50,11 @@ const EmployeeDetails = () => {
 
                 <div className="profile-header">
                     <div className="profile-avatar">
-                        {employee.first_name[0]}{employee.last_name[0]}
+                        {employee.profile_image_url ? (
+                            <img src={employee.profile_image_url} alt={`${employee.first_name} ${employee.last_name}`} />
+                        ) : (
+                            <span>{employee.first_name[0]}{employee.last_name[0]}</span>
+                        )}
                     </div>
                     <div className="profile-info">
                         <h1>{employee.first_name} {employee.last_name}</h1>

@@ -1,8 +1,13 @@
 // src/pages/Team.js
-import React from 'react';
+import React, { useState } from 'react';
 import './Team.css';
-
+import LoginModal from '../components/modals/LoginModal';
+import Footer from '../components/Footer';
 function Team() {
+  const [activeModal, setActiveModal] = useState(null);
+  const openLogin = () => setActiveModal('login');
+  const closeModal = () => setActiveModal(null);
+
   const teamMembers = [
     {
       name: 'Abd Elrahman',
@@ -36,7 +41,19 @@ function Team() {
 
   return (
     <div className="team-page">
-      {/* Hero Section */}
+      {/* Header */}
+      <header className="header">
+        <div className="header-container">
+          <div className="logo">
+            <img src="/assets/images/logo.svg" alt="Rawi Vision Logo" />
+          </div>
+          <nav className="nav-buttons">
+            <button className="btn-login" onClick={openLogin}>Log In</button>
+          </nav>
+        </div>
+      </header>
+
+      {/* Hero – white background, dark text */}
       <section className="team-hero">
         <div className="container">
           <h1>Our Team</h1>
@@ -72,6 +89,9 @@ function Team() {
           </div>
         </div>
       </section>
+      <Footer/>
+
+      <LoginModal isOpen={activeModal === 'login'} onClose={closeModal} />
     </div>
   );
 }

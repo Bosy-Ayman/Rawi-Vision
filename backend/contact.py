@@ -3,6 +3,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from database import get_db
+from auth.dependencies import require_hr
 
 router = APIRouter(prefix="/contact", tags=["contact"])
 
@@ -64,4 +65,28 @@ async def submit_contact(form: ContactForm, db: AsyncSession = Depends(get_db)):
     except Exception as e:
         await db.rollback()
         print(f"❌ ERROR: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/messages")
+async def get_contact_messages(db: AsyncSession = Depends(get_db), _=Depends(require_hr)):
+    try:
+        result = await db.execute(text("""
+            SELECT id, name, email, subject, message, created_at
+            FROM contact_messages
+            ORDER BY created_at DESC
+        """))
+        messages = result.fetchall()
+        return [
+            {
+                "id": row[0],
+                "name": row[1],
+                "email": row[2],
+                "subject": row[3],
+                "message": row[4],
+                "created_at": row[5]
+            }
+            for row in messages
+        ]
+    except Exception as e:
+        print(f"❌ ERROR fetching messages: {e}")
         raise HTTPException(status_code=500, detail=str(e))

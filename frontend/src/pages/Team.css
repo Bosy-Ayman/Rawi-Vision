@@ -1,58 +1,70 @@
 /* src/pages/Team.css */
+
 .team-page {
+  background: rgb(215, 233, 247); /* soft gray background for contrast */
   min-height: 100vh;
-  background-color: #ffffff;
+  display: flex;
+  flex-direction: column;
 }
 
-/* Hero Section */
+/* Hero – white background, dark text */
 .team-hero {
-  background: linear-gradient(135deg, #386E9D 0%, #2c5a85 100%);
-  color: white;
+  background: #ffffff;
+  color: #0f172a;
   text-align: center;
-  padding: 4rem 2rem;
+  padding: 2rem 2rem 2.5rem;
+  margin: 0;
+  border-bottom: 1px solid #eef2ff;
 }
 
 .team-hero h1 {
-  font-size: 2.5rem;
-  margin-bottom: 1rem;
+  font-size: 2.8rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 0.75rem;
+  letter-spacing: -0.02em;
 }
 
 .team-hero p {
-  font-size: 1.1rem;
-  opacity: 0.9;
+  font-size: 1.2rem;
+  color: #334155;
   max-width: 600px;
   margin: 0 auto;
 }
 
-/* Team Section */
+/* Team section – gray background, white cards */
 .team-section {
-  padding: 4rem 2rem;
-  background-color: #f9fafb;
+  padding: 3rem 2rem;
+  background: transparent;
 }
 
 .container {
-  max-width: 1200px;
+  max-width: 1280px;
   margin: 0 auto;
+  padding: 0 1rem;
 }
 
 .team-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 2rem;
 }
 
+/* Team cards – white with subtle shadow, dark text */
 .team-card {
-  background: white;
-  border-radius: 16px;
+  background: #ffffff;
+  border-radius: 1.75rem;
   padding: 2rem;
   text-align: center;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e9eef3;
+  transition: all 0.2s ease;
 }
 
 .team-card:hover {
   transform: translateY(-5px);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 20px 30px -12px rgba(0, 0, 0, 0.12);
+  border-color: #cbd5e1;
 }
 
 .team-avatar {
@@ -63,43 +75,49 @@
 .team-card h3 {
   font-size: 1.3rem;
   font-weight: 700;
-  color: #111827;
+  color: #0f172a;
   margin-bottom: 0.5rem;
 }
 
 .team-id {
   font-size: 0.85rem;
-  color: #9ca3af;
+  color: #475569;
   margin-bottom: 0.5rem;
 }
 
 .team-role {
   font-weight: 600;
-  color: #386E9D;
+  color: #386E9D; /* keep brand color for role */
   margin-bottom: 0.5rem;
   font-size: 0.95rem;
 }
 
 .team-desc {
   font-size: 0.85rem;
-  color: #6b7280;
+  color: #334155;
 }
 
-/* Supervisor Section */
+/* Supervisor section – light gray background, white card */
 .supervisor-section {
-  padding: 3rem 2rem 5rem;
-  background-color: white;
+  padding: 2rem 2rem 4rem;
+  background: transparent;
 }
 
 .supervisor-card {
-  max-width: 400px;
+  max-width: 450px;
   margin: 0 auto;
-  background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
-  border-radius: 20px;
+  background: #ffffff;
+  border-radius: 1.75rem;
   padding: 2rem;
   text-align: center;
-  border: 1px solid #e5e7eb;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e9eef3;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+  transition: all 0.2s ease;
+}
+
+.supervisor-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 20px 30px -12px rgba(0, 0, 0, 0.1);
 }
 
 .supervisor-icon {
@@ -110,7 +128,7 @@
 .supervisor-card h3 {
   font-size: 1.2rem;
   font-weight: 600;
-  color: #374151;
+  color: #0f172a;
   margin-bottom: 0.5rem;
   text-transform: uppercase;
   letter-spacing: 1px;
@@ -119,26 +137,66 @@
 .supervisor-name {
   font-size: 1.5rem;
   font-weight: 700;
-  color: #386E9D;
+  color: #0f172a;
   margin-bottom: 0.25rem;
 }
 
 .supervisor-title {
   font-size: 0.9rem;
-  color: #6b7280;
+  color: #475569;
+}
+
+/* Footer – white, merges with header */
+.team-page .footer {
+  background: #ffffff;
+  margin-top: auto;
+  border-top: 1px solid #eef2ff;
+}
+
+.team-page .footer-heading {
+  color: #0f172a;
+}
+
+.team-page .footer-links li a {
+  color: #334155;
+  text-decoration: none;
+  font-size: 0.8rem;
+  transition: color 0.2s;
+}
+.team-page .footer-links li a:hover {
+  color: #386E9D;
+}
+.team-page .social-icon {
+  color: #4b5563;
+}
+.team-page .social-icon:hover {
+  color: #386E9D;
+}
+.team-page .copyright {
+  color: #4b5563;
 }
 
 /* Responsive */
 @media (max-width: 768px) {
+  .team-hero {
+    padding: 1.5rem 1rem 2rem;
+  }
   .team-hero h1 {
     font-size: 2rem;
   }
-
+  .team-section {
+    padding: 2rem 1rem;
+  }
   .team-grid {
     grid-template-columns: 1fr;
     gap: 1.5rem;
   }
-
+  .team-card {
+    padding: 1.5rem;
+  }
+  .supervisor-section {
+    padding: 1.5rem 1rem 3rem;
+  }
   .supervisor-name {
     font-size: 1.2rem;
   }

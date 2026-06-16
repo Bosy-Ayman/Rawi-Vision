@@ -2,7 +2,7 @@
 
 /* ========== GLOBAL PAGE BACKGROUND ========== */
 .contact-page {
-  background: #f8fafc;  /* softer gray than before */
+  background:rgb(215, 233, 247); /* softer gray than before */
   min-height: 100vh;
 }
 
@@ -347,4 +347,14 @@
   .btn-submit {
     padding: 0.8rem;
   }
+}
+
+.error-msg {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background-color: #fee2e2;
+  color: #991b1b;
+  border-radius: 40px;
+  text-align: center;
+  font-weight: 500;
 }

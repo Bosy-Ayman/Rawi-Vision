@@ -34,6 +34,9 @@ const LoginModal = ({ isOpen, onClose }) => {
             localStorage.setItem('access_token', response.access_token);
             localStorage.setItem('user_role', response.role);
             localStorage.setItem('full_name', response.full_name);
+            if (response.profile_image_url) {
+                localStorage.setItem('user_avatar', response.profile_image_url);
+            }
             onClose();
             handleNavigation(response.role);
         } catch (err) {

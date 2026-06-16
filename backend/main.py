@@ -229,7 +229,14 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_client import REGISTRY, generate_latest
+from fastapi.responses import Response
+
 Instrumentator().instrument(app).expose(app)
+
+@app.get("/metrics", response_class=Response)
+async def metrics():
+    return Response(generate_latest(REGISTRY), media_type="text/plain")
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError, ResponseValidationError
