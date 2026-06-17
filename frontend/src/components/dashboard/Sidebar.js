@@ -35,7 +35,7 @@ const Sidebar = () => {
         // location.pathname === '/dashboard/system-users';
 
     // SuperAdmin Journey: system user management
-    const isSuperAdminJourney = location.pathname === '/admin/sc';
+    const isSuperAdminJourney = location.pathname === '/admin/system-users';
 
     const standardMenuItems = [
         { name: 'Video Feed', icon: 'video-feed.svg', path: '/dashboard/video-feed' },
@@ -58,9 +58,7 @@ const Sidebar = () => {
         // { name: 'Received Messages', icon: 'employee-insights.svg', path: '/admin/received-messages' },
     ];
 
-    const superAdminMenuItems = [
-        { name: 'Add Users', icon: 'employee-insights.svg', path: '/dashboard/system-users' }
-    ];
+    const superAdminMenuItems = [];
 
     const menuItems = isSuperAdminJourney ? superAdminMenuItems : isHRJourney ? hrMenuItems : standardMenuItems;
 
