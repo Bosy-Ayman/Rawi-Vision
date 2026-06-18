@@ -46,6 +46,11 @@ class AuthService:
                 clock_skew_in_seconds=10
             )
         except ValueError as e:
+            try:
+                from observability.metrics import AUTH_LOGIN_COUNTER
+                AUTH_LOGIN_COUNTER.labels(status="failure").inc()
+            except ImportError:
+                pass
             raise ValueError(f"Invalid or expired Google token. Details: {str(e)}")
 
         email: str = info["email"]
@@ -53,6 +58,11 @@ class AuthService:
 
         user: SystemUser | None = await self.repository.get_by_email(email)
         if not user:
+            try:
+                from observability.metrics import AUTH_LOGIN_COUNTER
+                AUTH_LOGIN_COUNTER.labels(status="failure").inc()
+            except ImportError:
+                pass
             raise PermissionError(
                 "Access denied. Your email is not registered in this system. "
                 "Contact your administrator."
@@ -85,6 +95,7 @@ class AuthService:
             "token_type": "bearer",
             "role": user.role,
             "full_name": user.full_name,
+            "profile_image_url": user.profile_image_url,
         }
         
     async def refresh_access_token(self, refresh_token: str) -> dict:

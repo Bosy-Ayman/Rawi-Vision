@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
 import { useSubscription } from '../context/SubscriptionContext';
 
@@ -6,6 +6,9 @@ const Settings = () => {
     const { status, capabilities, installationUuid, checkSubscriptionStatus } = useSubscription();
     const [keyInput, setKeyInput] = useState(installationUuid);
     const [successMessage, setSuccessMessage] = useState('');
+    const [profileImage, setProfileImage] = useState(localStorage.getItem('user_avatar') || null);
+    const [uploading, setUploading] = useState(false);
+    const fileInputRef = useRef(null);
 
     const handleSaveKey = async (e) => {
         e.preventDefault();
@@ -15,10 +18,62 @@ const Settings = () => {
         setTimeout(() => setSuccessMessage(''), 4000);
     };
 
+    const handleProfileImageChange = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const base64Image = event.target?.result;
+            if (typeof base64Image === 'string') {
+                setProfileImage(base64Image);
+                localStorage.setItem('user_avatar', base64Image);
+                setSuccessMessage('Profile picture updated successfully!');
+                setTimeout(() => setSuccessMessage(''), 4000);
+                window.dispatchEvent(new Event('userAvatarUpdated'));
+            }
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const triggerFileInput = () => {
+        fileInputRef.current?.click();
+    };
+
     return (
         <DashboardLayout title="System Settings">
             <div style={styles.container}>
                 <div style={styles.grid}>
+                    {/* Profile Picture Card */}
+                    <div style={styles.card}>
+                        <h2 style={styles.cardTitle}>My Profile</h2>
+                        <p style={styles.cardDescription}>
+                            Upload and manage your profile picture.
+                        </p>
+
+                        <div style={styles.profileSection}>
+                            <img
+                                src={profileImage || 'https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png'}
+                                alt="Profile"
+                                style={styles.profileImage}
+                            />
+                            <button
+                                onClick={triggerFileInput}
+                                style={styles.button}
+                                disabled={uploading}
+                            >
+                                {uploading ? 'Uploading...' : 'Change Picture'}
+                            </button>
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept="image/*"
+                                onChange={handleProfileImageChange}
+                                style={{ display: 'none' }}
+                            />
+                        </div>
+                    </div>
+
                     {/* License Information Card */}
                     <div style={styles.card}>
                         <h2 style={styles.cardTitle}>License & Activation</h2>
@@ -199,7 +254,7 @@ const styles = {
         outline: 'none',
     },
     button: {
-        background: 'linear-gradient(135deg, #6c5ce7, #8575f8)',
+        background: 'linear-gradient(135deg, #83ace2, #2c7fbe)',
         color: '#ffffff',
         border: 'none',
         borderRadius: '8px',
@@ -240,7 +295,7 @@ const styles = {
         fontWeight: '600',
     },
     link: {
-        color: '#6c5ce7',
+        color: '#2974c9',
         textDecoration: 'none',
         fontWeight: '500',
     },
@@ -282,6 +337,19 @@ const styles = {
         padding: '4px 10px',
         borderRadius: '6px',
         textTransform: 'uppercase',
+    },
+    profileSection: {
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '16px',
+    },
+    profileImage: {
+        width: '120px',
+        height: '120px',
+        borderRadius: '50%',
+        border: '3px solid rgba(255,255,255,0.1)',
+        objectFit: 'cover',
     }
 };
 

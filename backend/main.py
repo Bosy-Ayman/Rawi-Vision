@@ -1,6 +1,6 @@
 import sys
 import os
-
+from contact import router as contact_router   # direct import from same folder
 # Limit CPU threads to prevent CPU spikes and supervisor container kills
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
@@ -229,7 +229,14 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_client import REGISTRY, generate_latest
+from fastapi.responses import Response
+
 Instrumentator().instrument(app).expose(app)
+
+@app.get("/metrics", response_class=Response)
+async def metrics():
+    return Response(generate_latest(REGISTRY), media_type="text/plain")
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError, ResponseValidationError
@@ -293,3 +300,4 @@ app.include_router(attendance_router)
 app.include_router(subscription_router)
 app.include_router(search_router)
 app.include_router(summarization_router)
+app.include_router(contact_router, prefix="/api")

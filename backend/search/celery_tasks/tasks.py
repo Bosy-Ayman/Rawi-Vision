@@ -140,22 +140,29 @@ def insert_frame(video_id: str, frame_number: int, timestamp_offset: float,
 
 
 def insert_video_appearance(video_id: str, employee_id: str, frame_number: int,
-                             timestamp_offset: float, confidence: float):
+                             timestamp_offset: float, confidence: float,
+                             bbox_x1: int = None, bbox_y1: int = None,
+                             bbox_x2: int = None, bbox_y2: int = None,
+                             is_identified: bool = True):
     """Inserts one row into video_appearances for every detected face in a frame.
 
     This enables continuous per-frame tracking of identified persons in a video,
     so a person appearing in 100 frames produces 100 distinct rows.
     """
+    if str(employee_id) == "0":
+        employee_id = None
     conn = get_sync_db_conn()
     try:
         with conn.cursor() as cur:
             cur.execute(
                 """
                 INSERT INTO video_appearances
-                    (video_id, employee_id, frame_number, timestamp_offset, confidence)
-                VALUES (%s, %s, %s, %s, %s)
+                    (video_id, employee_id, frame_number, timestamp_offset, confidence,
+                     bbox_x1, bbox_y1, bbox_x2, bbox_y2, is_identified)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                (video_id, employee_id, frame_number, timestamp_offset, confidence)
+                (video_id, employee_id, frame_number, timestamp_offset, confidence,
+                 bbox_x1, bbox_y1, bbox_x2, bbox_y2, is_identified)
             )
         conn.commit()
     finally:
@@ -324,7 +331,12 @@ def index_video_task(self, video_id: str, storage_path: str, sampling_rate: int 
                                 employee_id=det["emp_id"],
                                 frame_number=indexed_frame,
                                 timestamp_offset=timestamp,
-                                confidence=det["confidence"]
+                                confidence=det["confidence"],
+                                bbox_x1=det.get("x1"),
+                                bbox_y1=det.get("y1"),
+                                bbox_x2=det.get("x2"),
+                                bbox_y2=det.get("y2"),
+                                is_identified=not det.get("is_unknown", False)
                             )
                         except Exception as app_err:
                             print(f"[WARN] video_appearance insert failed: {app_err}")

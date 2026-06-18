@@ -1,0 +1,274 @@
+/* =============================================
+   Received Messages page – content styles
+   Sidebar / TopBar come from DashboardLayout
+   ============================================= */
+
+.received-messages-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1.75rem;
+}
+
+/* ── Header ────────────────────────────────– */
+.header-section {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding: 0 0.5rem;
+}
+
+.header-section h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-main);
+    margin: 0;
+}
+
+.header-section p {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+/* ── Alerts ────────────────────────────────– */
+.error-message {
+    padding: 0.7rem 1rem;
+    border-radius: var(--radius-md);
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin-bottom: 1.25rem;
+    background: #fff1f2;
+    color: var(--danger-hover);
+    border: 1px solid #fecdd3;
+}
+
+.no-messages {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--text-light);
+    font-size: 0.9rem;
+    font-style: italic;
+}
+
+.loading {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--text-light);
+    font-size: 0.9rem;
+}
+
+/* ── Button ────────────────────────────────– */
+.refresh-btn {
+    padding: 0.7rem 1.5rem;
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: 0.9rem;
+    font-weight: 700;
+    font-family: inherit;
+    background: var(--primary);
+    color: var(--text-main);
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(56, 110, 157, 0.3);
+}
+
+.refresh-btn:hover {
+    background: #507fab;
+    transform: translateY(-1px);
+}
+
+/* ── Table Wrapper ─────────────────────────– */
+.messages-table-wrapper {
+    overflow-x: auto;
+}
+
+/* ── Table ─────────────────────────────────– */
+.messages-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+    background: var(--bg-surface);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: 0 30px 32px rgba(0, 0, 0, 0.15);
+    border: 1px solid var(--border-color);
+    background-clip: padding-box;
+}
+
+.messages-table thead tr {
+    border-bottom: 1px solid var(--bg-hover);
+}
+
+.messages-table th {
+    text-align: left;
+    padding: 0.6rem 1rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--text-light);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.messages-table tbody tr {
+    border-bottom: 1px solid var(--bg-main);
+    transition: background 0.15s;
+}
+
+.messages-table tbody tr:hover {
+    background: var(--bg-main);
+}
+
+.messages-table tbody tr.expanded {
+    background: #f0f8ff;
+}
+
+.messages-table td {
+    padding: 0.85rem 1rem;
+    color: var(--text-main);
+    vertical-align: middle;
+}
+
+/* ── Table Columns ─────────────────────────– */
+.id-col {
+    width: 50px;
+    text-align: center;
+    color: var(--text-light);
+    font-weight: 600;
+}
+
+.name-col {
+    font-weight: 600;
+    color: var(--text-main);
+}
+
+.email-col {
+    width: 200px;
+}
+
+.email-col a {
+    color: #6fa1d3;
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.email-col a:hover {
+    text-decoration: underline;
+}
+
+.subject-col {
+    max-width: 300px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-main);
+}
+
+.date-col {
+    width: 150px;
+    color: var(--text-light);
+    font-size: 0.85rem;
+}
+
+.action-col {
+    width: 100px;
+    text-align: center;
+}
+
+/* ── Expand Button ─────────────────────────– */
+.expand-btn {
+    padding: 0.3rem 0.8rem;
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: 0.78rem;
+    font-weight: 600;
+    font-family: inherit;
+    background: var(--primary);
+    color: var(--text-main);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.expand-btn:hover {
+    background: #aacbea;
+}
+
+/* ── Expanded Row ──────────────────────────– */
+.expanded-row td {
+    padding: 0;
+    background: #f0f8ff;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.message-details {
+    padding: 2rem 2.25rem;
+    background: var(--bg-surface);
+    border-top: 1px solid var(--bg-main);
+}
+
+.detail-item {
+    margin-bottom: 1.5rem;
+    line-height: 1.6;
+}
+
+.detail-item strong {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--text-light);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.5rem;
+    display: block;
+}
+
+.detail-item a {
+    color: #69a8e7;
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.detail-item a:hover {
+    text-decoration: underline;
+}
+
+.message-content p {
+    background: var(--bg-main);
+    padding: 1rem;
+    border-left: 4px solid var(--primary);
+    border-radius: var(--radius-md);
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 0.9rem;
+    color: var(--text-main);
+    margin-top: 0.5rem;
+}
+
+/* ── Responsive ────────────────────────────– */
+@media (max-width: 768px) {
+    .messages-table {
+        font-size: 0.8rem;
+    }
+
+    .messages-table th {
+        padding: 0.5rem 0.75rem;
+    }
+
+    .messages-table td {
+        padding: 0.75rem 0.75rem;
+    }
+
+    .header-section {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    .message-details {
+        padding: 1.5rem 1.5rem;
+    }
+
+    .subject-col {
+        max-width: 200px;
+    }
+}

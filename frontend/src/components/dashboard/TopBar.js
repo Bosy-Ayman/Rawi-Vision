@@ -23,7 +23,32 @@ const TYPE_EMOJIS = {
 const TopBar = ({ title }) => {
     const [anomalies, setAnomalies] = useState([]);
     const [showDropdown, setShowDropdown] = useState(false);
+    const [userAvatar, setUserAvatar] = useState('https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png');
+    const [userName, setUserName] = useState('User');
+    const [userRole, setUserRole] = useState('Admin');
     const navigate = useNavigate();
+
+    useEffect(() => {
+        const storedName = localStorage.getItem('full_name') || 'User';
+        const storedRole = localStorage.getItem('user_role') || 'Admin';
+        const storedAvatar = localStorage.getItem('user_avatar');
+
+        setUserName(storedName);
+        setUserRole(storedRole);
+        if (storedAvatar) {
+            setUserAvatar(storedAvatar);
+        }
+
+        const handleAvatarUpdate = () => {
+            const newAvatar = localStorage.getItem('user_avatar');
+            if (newAvatar) {
+                setUserAvatar(newAvatar);
+            }
+        };
+
+        window.addEventListener('userAvatarUpdated', handleAvatarUpdate);
+        return () => window.removeEventListener('userAvatarUpdated', handleAvatarUpdate);
+    }, []);
 
     const fetchAlerts = async () => {
         try {
@@ -55,9 +80,9 @@ const TopBar = ({ title }) => {
             <h1 className="page-title">{title}</h1>
 
             <div className="topbar-actions">
-                <div className="language-selector">
+                {/* <div className="language-selector">
                     🇺🇸 Eng (US) ⌄
-                </div>
+                </div> */}
 
                 <div className="notification-container" style={{ position: 'relative' }}>
                     <button 
@@ -187,13 +212,13 @@ const TopBar = ({ title }) => {
 
                 <div className="user-profile">
                     <img
-                        src="https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png"
+                        src={userAvatar}
                         alt="User"
                         className="user-avatar"
                     />
                     <div className="user-info">
-                        <span className="user-name">Mustiq</span>
-                        <span className="user-role">Admin</span>
+                        <span className="user-name">{userName}</span>
+                        <span className="user-role">{userRole}</span>
                     </div>
                     <span className="dropdown-arrow">⌄</span>
                 </div>

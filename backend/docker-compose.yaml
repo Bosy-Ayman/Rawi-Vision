@@ -52,7 +52,7 @@ services:
     image: confluentinc/cp-zookeeper:7.4.0
     hostname: zookeeper
     ports:
-      - "32181:2181"
+      - "22181:2181"
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
@@ -63,7 +63,7 @@ services:
     depends_on:
       - zookeeper
     ports:
-      - "29092:29092"
+      - "39092:29092"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
@@ -79,7 +79,7 @@ services:
     image: prom/prometheus:latest
     container_name: prometheus
     ports:
-      - "9090:9090"
+      - "9091:9090"
     volumes:
       - ./observability/infra/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
@@ -98,6 +98,7 @@ services:
       - GF_AUTH_DISABLE_LOGIN_FORM=true
     volumes:
       - ./observability/infra/grafana/provisioning:/etc/grafana/provisioning
+      - ./observability/infra/grafana/provisioning/dashboards:/var/lib/grafana/dashboards
       - grafana_data:/var/lib/grafana
 
 configs:

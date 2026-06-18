@@ -21,4 +21,5 @@ class SystemUser(Base):
     full_name: Mapped[str] = mapped_column(String, nullable=False)
     role: Mapped[SystemRole] = mapped_column(SAEnum(SystemRole, name="systemrole"), nullable=False)
     google_id: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    profile_image_url: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     date_created: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

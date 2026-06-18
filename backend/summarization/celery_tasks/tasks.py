@@ -10,7 +10,7 @@ from minio import Minio
 # Add Summarization_Pipeline to path
 backend_dir = Path(__file__).resolve().parent.parent.parent
 project_dir = backend_dir.parent
-summarization_pipeline_dir = project_dir / "Summarization_Pipeline"
+summarization_pipeline_dir = project_dir / "ai" / "summarization"
 if str(summarization_pipeline_dir) not in sys.path:
     sys.path.insert(0, str(summarization_pipeline_dir))
 
@@ -19,6 +19,7 @@ from object_detection import load_model
 from motion_filter import MotionFilter
 from frame_processor import save_frame
 from video_generator import frames_to_video
+
 # Import ensure_dir from Summarization_Pipeline/utils.py explicitly to avoid conflict with backend/utils
 import importlib.util
 spec = importlib.util.spec_from_file_location("pipeline_utils", str(summarization_pipeline_dir / "utils.py"))

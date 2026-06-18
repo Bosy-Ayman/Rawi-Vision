@@ -5,7 +5,7 @@ import { anomalyAPI } from '../api/anomalies';
 import { employeeAPI } from '../api/employees';
 import ToastNotification from '../components/modals/ToastNotification';
 import EmployeeAvatar from '../components/dashboard/EmployeeAvatar';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
+import {  XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
 import './Anomalies.css';
 
 const WS_URL = 'ws://127.0.0.1:8002/anomalies/ws/live';

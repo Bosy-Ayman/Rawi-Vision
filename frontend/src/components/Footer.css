@@ -1,0 +1,142 @@
+/* src/components/Footer.css */
+
+/* Footer container – white background, merges with header */
+.footer {
+  background: #ffffff;
+  padding: 3rem 0 1rem;
+  margin-top: auto;
+  width: 100%;
+  border-top: 1px solid #eef2ff;
+}
+
+.footer-container {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+
+/* Footer content grid */
+.footer-content {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 2rem;
+  margin-bottom: 2rem;
+}
+
+.footer-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.footer-logo-section {
+  grid-column: span 1;
+}
+
+.footer-logo img {
+  height: 40px;
+  width: auto;
+}
+
+/* Footer headings */
+.footer-heading {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 1rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Footer links */
+.footer-links {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.footer-links li a {
+  color: #334155;
+  text-decoration: none;
+  font-size: 0.8rem;
+  transition: color 0.2s ease;
+}
+
+.footer-links li a:hover {
+  color: #386E9D;
+}
+
+/* Footer bottom bar */
+.footer-bottom {
+  border-top: 1px solid #eef2ff;
+  padding-top: 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+/* Social links */
+.social-links {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.social-icon {
+  color: #4b5563;
+  transition: color 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.social-icon:hover {
+  color: #386E9D;
+}
+
+/* Copyright text */
+.copyright {
+  font-size: 0.7rem;
+  color: #6b7280;
+  text-align: right;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Responsive design */
+@media (max-width: 1024px) {
+  .footer-content {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .footer-logo-section {
+    grid-column: span 3;
+  }
+}
+
+@media (max-width: 768px) {
+  .footer-container {
+    padding: 0 1rem;
+  }
+  .footer-content {
+    grid-template-columns: 1fr;
+    text-align: center;
+    gap: 1.5rem;
+  }
+  .footer-logo-section {
+    grid-column: span 1;
+  }
+  .footer-links {
+    align-items: center;
+  }
+  .footer-bottom {
+    flex-direction: column;
+    text-align: center;
+  }
+  .copyright {
+    text-align: center;
+  }
+}

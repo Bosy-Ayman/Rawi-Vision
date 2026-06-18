@@ -20,7 +20,7 @@ RABBITMQ_URL = Config.RABBITMQ_BROKER_URL
 redis_client = redis.Redis(host=Config.REDIS_HOST, port=int(Config.REDIS_PORT), db=0)
 attendance_exchange = Exchange('attendance', type='topic', durable=True)
 
-THRESHOLD = 1.0
+THRESHOLD = 1.5
 FACE_RETRY_FRAMES = 30          # FIX: was 10 — too aggressive, flooded the queue
 PERSON_SKIP = 2
 
