@@ -12,7 +12,7 @@ from camera_ingestion.utils.redis import redis_client
 # -------------------------- Config -------------------------------------------
 STAGE1_MODEL_ID      = "Nikeytas/videomae-crime-detector-fixed-format"
 STAGE1_ANOMALY_IDX   = 1
-STAGE1_THRESHOLD     = 0.4    # VideoMAE log threshold
+STAGE1_THRESHOLD     = 0.65    # VideoMAE log threshold
 STAGE1_VLM_THRESHOLD = 0.40   # stricter gate before calling VLM
 
 STAGE3_MODEL_ID   = "HuggingFaceTB/SmolVLM-Instruct"
@@ -30,7 +30,7 @@ INFER_EVERY_N = 90
 MIN_BRIGHTNESS = 25    # mean pixel value; below = too dark
 MAX_BLUR_VAR   = 30.0  # Laplacian variance; below = too blurry
 
-KAFKA_BROKER = "localhost:29092"
+KAFKA_BROKER = "localhost:39092"
 KAFKA_TOPIC  = "anomaly-incidents"
 
 # Order matters: specific/severe labels checked before generic ones
@@ -41,6 +41,7 @@ VALID_LABELS = [
     "vandalism",
     "unusual_behavior",
     "normal",
+    
 ]
 
 # -------------------------- Globals ------------------------------------------
@@ -191,7 +192,7 @@ def parse_vlm_output(text: str, anomaly_score: float = 0.0):
     YOLO already confirmed an anomalous frame with a person in it.
     """
     text = text.strip()
-    label = "unusual_behavior"
+    label = "normal" if anomaly_score <= STAGE1_THRESHOLD else "unusual_behavior"
 
     sentences = re.split(r"[.!?\n]", text.lower())
     negation_re = re.compile(
